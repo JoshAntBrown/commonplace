@@ -256,6 +256,16 @@ struct CanvasView: View {
             if store.showHelp { store.showHelp = false } else { store.clearSelection() }
             return true
         }
+        // A card just entered editing but its editor isn't focused yet: hold
+        // the keys for it rather than treating them as shortcuts.
+        if store.editing != nil, !inText, !flags.contains(.command), !flags.contains(.control) {
+            switch event.keyCode {
+            case 51: if !store.pendingTyping.isEmpty { store.pendingTyping.removeLast() }
+            case 36, 76: store.pendingTyping += "\n"
+            default: store.pendingTyping += event.characters ?? ""
+            }
+            return true
+        }
         if inText {
             if flags.contains(.command), event.keyCode == 36 { // ⌘Return finishes editing
                 store.editing = nil
@@ -293,9 +303,7 @@ struct CanvasView: View {
         case "i": store.pickImages()
         case "c": store.startConnecting()
         case "p": store.add(.place, at: p, edit: true)
-        case "t":
-            guard let id = store.selection.first, store.videoID(for: id) != nil else { return false }
-            store.addMoment(id)
+        case "t": store.addThought()
         case "[", "]":
             guard let id = store.selection.first, store.videoID(for: id) != nil else { return false }
             store.stepSpeed(id, up: key == "]")
@@ -498,7 +506,7 @@ struct HelpOverlay: View {
         ("⌘V", "Paste URL, image or text"), ("Double-click", "Sticky on canvas / edit card"),
         ("C", "Connect selection → click target"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
-        ("Affordance dot", "Connect that affordance → click a place"), ("T", "Moment sticky from a video or its moments"),
+        ("Affordance dot", "Connect that affordance → click a place"), ("T", "Thought from the selection (a moment on videos)"),
         ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Delete", "Remove selection"), ("⌘Z · ⇧⌘Z", "Undo · redo"), ("Scroll · ⌘-scroll", "Pan · zoom"),

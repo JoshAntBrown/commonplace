@@ -54,6 +54,14 @@ final class BoardStore {
     /// arrow) are one undo step.
     @ObservationIgnored private var checkpointedThisTurn = false
     @ObservationIgnored private var editSession = 0
+    /// Keys typed after a card entered editing but before its editor had
+    /// focus; the editor inserts them once it's ready.
+    @ObservationIgnored var pendingTyping = ""
+
+    func takePendingTyping() -> String {
+        defer { pendingTyping = "" }
+        return pendingTyping
+    }
 
     init(library: Library, name: String) {
         self.library = library
@@ -381,6 +389,7 @@ final class BoardStore {
 
     func beginEditing(_ id: UUID) {
         editSession += 1
+        pendingTyping = ""
         selection = [id]
         selectedConnection = nil
         // A plain video card has nothing to edit; its notes are moment stickies.
@@ -582,28 +591,47 @@ final class BoardStore {
     func videoID(for id: UUID) -> UUID? {
         guard let card = card(id) else { return nil }
         if card.kind == .video { return id }
-        guard let v = card.momentOf, self.card(v)?.kind == .video else { return nil }
+        guard let v = card.thoughtOf, self.card(v)?.kind == .video else { return nil }
         return v
     }
 
-    /// Adds a sticky for the video's current moment, connected to the video
-    /// and stacked in a column beside it, and starts editing it.
+    /// T: draw a thought out of whatever is selected. From a video (or one
+    /// of its moments) it's a moment at the current time; from any other card
+    /// it's a connected sticky; with nothing selected, a free sticky.
+    func addThought() {
+        guard let id = selection.first, card(id) != nil else {
+            add(.sticky, at: insertionPoint, edit: true)
+            return
+        }
+        if videoID(for: id) != nil {
+            addMoment(id)
+        } else {
+            placeThought(from: id, body: "")
+        }
+    }
+
+    /// Adds a sticky for the video's current moment and starts editing it.
     func addMoment(_ id: UUID) {
         guard let videoID = videoID(for: id) else { return }
         video(videoID).currentTime { [weak self] t in
-            guard let self, let video = self.card(videoID) else { return }
-            let x = video.frame.maxX + 60
-            let column = self.board.cards.filter { $0.momentOf == videoID && abs($0.frame.minX - x) < 1 }
-            let y = column.map { $0.frame.maxY + 16 }.max() ?? video.frame.minY
-            let frame = CGRect(x: x, y: y, width: 220, height: 130)
-            let moment = self.add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
-                $0.frame = frame
-                $0.momentOf = videoID
-                $0.body = "[\(Timestamp.format(t))] "
-            }
-            self.connect(videoID, moment)
-            self.beginEditing(moment)
+            self?.placeThought(from: videoID, body: "[\(Timestamp.format(t))] ")
         }
+    }
+
+    /// A sticky connected from `origin`, stacked in a column to its right.
+    private func placeThought(from origin: UUID, body: String) {
+        guard let source = card(origin) else { return }
+        let x = source.frame.maxX + 60
+        let column = board.cards.filter { $0.thoughtOf == origin && abs($0.frame.minX - x) < 1 }
+        let y = column.map { $0.frame.maxY + 16 }.max() ?? source.frame.minY
+        let frame = CGRect(x: x, y: y, width: 220, height: 130)
+        let thought = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
+            $0.frame = frame
+            $0.thoughtOf = origin
+            $0.body = body
+        }
+        connect(origin, thought)
+        beginEditing(thought)
     }
 
     // MARK: Undo

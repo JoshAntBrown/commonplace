@@ -130,7 +130,7 @@ struct CardView: View {
     }
 
     private func bodyEditor(size: CGFloat) -> some View {
-        CardTextEditor(text: bodyBinding, size: size * s, color: ink)
+        CardTextEditor(text: bodyBinding, size: size * s, color: ink, takePending: store.takePendingTyping)
     }
 
     private func markdown(_ size: CGFloat, placeholder: String? = nil) -> some View {
@@ -305,7 +305,8 @@ struct CardView: View {
                     .font(.system(size: 16 * s, weight: .semibold))
                     .foregroundStyle(theme.text)
                     .frame(height: Place.titleHeight * s)
-                CardTextEditor(text: bodyBinding, size: 13.5 * s, color: theme.text)
+                CardTextEditor(text: bodyBinding, size: 13.5 * s, color: theme.text,
+                               takePending: store.takePendingTyping)
             } else {
                 Text(card.title.isEmpty ? "Place" : card.title)
                     .font(.system(size: 16 * s, weight: .semibold))
@@ -395,6 +396,8 @@ struct CardTextEditor: View {
     @Binding var text: String
     let size: CGFloat
     let color: Color
+    /// Keys typed before this editor had focus.
+    var takePending: () -> String = { "" }
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -407,12 +410,25 @@ struct CardTextEditor: View {
             .onAppear {
                 DispatchQueue.main.async {
                     focused = true
-                    // Start typing after any existing text, e.g. a moment's timestamp.
-                    DispatchQueue.main.async {
-                        guard let tv = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
-                        tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
-                    }
+                    prepare(attempt: 0)
                 }
             }
+    }
+
+    /// Once the text view has focus, put the cursor after any existing text
+    /// (e.g. a moment's timestamp) and insert anything typed in the meantime.
+    private func prepare(attempt: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0 : 0.03)) {
+            guard let tv = NSApp.keyWindow?.firstResponder as? NSTextView else {
+                if attempt < 20 {
+                    focused = true
+                    prepare(attempt: attempt + 1)
+                }
+                return
+            }
+            tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+            let pending = takePending()
+            if !pending.isEmpty { tv.insertText(pending, replacementRange: tv.selectedRange()) }
+        }
     }
 }

@@ -58,8 +58,9 @@ struct Card: Identifiable, Equatable {
     var media: String?
     /// The page this card was clipped from.
     var source: String?
-    /// For a moment sticky: the video card it marks a point in.
-    var momentOf: UUID?
+    /// For a thought sticky: the card it was drawn out of. A thought from a
+    /// video is a moment, and its timestamp seeks that video.
+    var thoughtOf: UUID?
     /// Playback speed for a video card.
     var speed: Double = 1
     /// Where playback was last, in seconds, so the video resumes there.
