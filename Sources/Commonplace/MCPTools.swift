@@ -78,7 +78,7 @@ final class MCPTools {
               "x": ["type": "number"], "y": ["type": "number"], "board": boardArg],
              required: ["kind"], readOnly: false),
         tool("add_thought",
-             "Add a thought to a card: a sticky threaded from it, placed beside it. On a video (or one of its thoughts) it starts with a timestamp, defaulting to the current playback position.",
+             "Add a thought about a card: a sticky threaded from it, placed beside it. On a video it starts with a timestamp, defaulting to the current playback position. For another point on the same video, call it on the video again.",
              ["card_id": cardArg, "body": ["type": "string"],
               "timestamp": ["type": "number", "description": "For videos: seconds into the video."],
               "board": boardArg],
@@ -262,11 +262,12 @@ final class MCPTools {
             }
             do { done(.success(try self.cardResult(thought, in: store))) } catch { done(.failure(ToolError("\(error)"))) }
         }
-        guard let videoID = store.videoID(for: id) else { return place("", id) }
+        // Only a thought on the video itself carries a timestamp.
+        guard store.card(id)?.kind == .video else { return place("", id) }
         if let t = Self.number(a["timestamp"]) {
-            place("[\(Timestamp.format(t))] ", videoID)
+            place("[\(Timestamp.format(t))] ", id)
         } else {
-            store.video(videoID).currentTime { t in place("[\(Timestamp.format(t))] ", videoID) }
+            store.video(id).currentTime { t in place("[\(Timestamp.format(t))] ", id) }
         }
     }
 

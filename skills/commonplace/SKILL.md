@@ -27,7 +27,9 @@ Commonplace uses a small, fixed vocabulary. Use these words with the user too.
 - **Thought**: a sticky drawn out of another card and threaded to it (the user presses T). Use
   `add_thought` to respond to a card. Several points from one source are sibling thoughts under it.
   A thought on a video starts with a timestamp like `[12:34]`, which seeks the video when clicked;
-  `add_thought` on a video uses the current playback time unless you pass `timestamp`.
+  `add_thought` on a video uses the current playback time unless you pass `timestamp`. For
+  another point on the same video, call it on the video again; calling it on one of the video's
+  thoughts adds a thought about that thought.
 - **Reference**: "see also", between any two cards anywhere. Shown as a chip on the card and as a
   floating list beside the selected card, not as lines. Made with `add_reference`, labelled with
   why ("supports", "in tension with", "example of").

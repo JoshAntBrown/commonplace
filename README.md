@@ -34,8 +34,8 @@ them between boards, and other apps receive the cards' Markdown.
 - **Thread**: the "follows from" link (`parent:` in front-matter). One per card, so a board is a set
   of trees, drawn as solid curves. **A** tidies the selected thread into columns.
 - **Thought** (**T**): a sticky drawn out of the selection and threaded to it; on a video it starts
-  with the current time, which seeks the video when clicked. **Continue** (**⇧T**): the next card in
-  the same thread. **⇧C** then a click makes that card follow the selection.
+  with the current time, which seeks the video when clicked. **⇧T**: the next thought after the
+  selected one, below it in the same thread (after a video's thought: the next one on the video). **⇧C** then a click makes that card follow the selection.
 - **Reference** (**C** then a click): "see also". Shown as a chip on the card and a floating list
   beside the selected card, not as lines (**R** draws them all). Right-click converts to a thread.
 - **Wire**: a breadboard link from a place's affordance to a place; always drawn.

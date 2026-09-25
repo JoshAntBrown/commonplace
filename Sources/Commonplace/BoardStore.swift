@@ -824,15 +824,19 @@ final class BoardStore {
         if board.connections.count != before { scheduleSave() }
     }
 
-    /// ⇧T: continue the thread — a new card after the selected one, sharing
-    /// its parent. From a card with no parent it adds a thought instead, like T.
+    /// ⇧T: the next thought after the selected one — below it, sharing its
+    /// parent. T, by contrast, is a thought about the selected card.
     func continueThread() {
         guard let id = selection.first, let current = card(id) else { return addThought() }
-        guard let parent = current.parent, videoID(for: id) == nil else { return addThought() }
+        // After a video's thought: the next thought on that video, at the current time.
+        if let parent = current.parent, card(parent)?.kind == .video {
+            return addThoughtAtCurrentTime(parent)
+        }
+        // Otherwise the next card directly below, sharing the parent (if any).
         let frame = CGRect(x: current.frame.minX, y: current.frame.maxY + 24, width: current.frame.width, height: 130)
         let next = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
             $0.frame = frame
-            $0.parent = parent
+            $0.parent = current.parent
         }
         beginEditing(next)
     }
@@ -922,7 +926,9 @@ final class BoardStore {
             add(.sticky, at: insertionPoint, edit: true)
             return
         }
-        if videoID(for: id) != nil {
+        // A thought about this card. Only a video itself gets a timestamp; a
+        // thought on one of its thoughts is about that thought.
+        if card(id)?.kind == .video {
             addThoughtAtCurrentTime(id)
         } else {
             placeThought(from: id, body: "")
