@@ -135,8 +135,8 @@ struct CardView: View {
     /// Hidden when zoomed out unless the card is selected.
     @ViewBuilder private var referenceChip: some View {
         let refs = store.references(of: card.id)
-        if !refs.isEmpty, !overview || isSelected {
-            let k = overview ? 1 : max(c, 0.8)  // small, but always legible and clickable
+        if !refs.isEmpty, !far || isSelected {
+            let k = far ? 1 : max(c, 0.8)  // small, but always legible and clickable
             // Selecting the card brings up its floating references, which move
             // with the board (a popover would linger on screen as it glides).
             Button {
@@ -187,7 +187,8 @@ struct CardView: View {
     }
 
     private func bodyEditor(size: CGFloat) -> some View {
-        CardTextEditor(text: bodyBinding, size: size * s, color: ink, takePending: store.takePendingTyping)
+        // Editing text is always readable, whatever the zoom; the editor scrolls.
+        CardTextEditor(text: bodyBinding, size: max(12, size * s), color: ink, takePending: store.takePendingTyping)
     }
 
     private func markdown(_ size: CGFloat, placeholder: String? = nil) -> some View {
@@ -205,8 +206,12 @@ struct CardView: View {
     /// Zoomed out, cards trade detail for legibility: a readable headline
     /// rather than shrunken paragraphs, and a still frame rather than a player.
     private var overview: Bool {
-        s < BoardStore.overviewZoom && !isEditing && card.kind != .image
+        guard !isEditing, card.kind != .image else { return false }
+        return s < (card.kind == .video ? BoardStore.overviewZoom : BoardStore.summaryZoom)
     }
+
+    /// Zoomed far enough out that small chrome would be unreadable.
+    private var far: Bool { s < BoardStore.overviewZoom }
 
     @ViewBuilder private var content: some View {
         if overview {
@@ -227,7 +232,8 @@ struct CardView: View {
         }
     }
 
-    /// Readable at any zoom: grows as the card shrinks, within limits.
+    /// Readable at any zoom: text stays at a legible size (13pt) through the
+    /// summary range and only shrinks, to an 8pt floor, when zoomed far out.
     private var overviewFont: CGFloat { min(13, max(8, 30 * s)) }
 
     private var posterURL: URL? {
@@ -251,9 +257,45 @@ struct CardView: View {
                 .overlay(alignment: .bottomLeading) { overviewLabel(icon: "play.fill", onImage: true) }
                 .clipped()
         } else {
-            overviewLabel(icon: card.kind == .sticky ? nil : card.kind.symbol, onImage: false)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: overviewFont * 0.35) {
+                overviewLabel(icon: card.kind == .sticky ? nil : card.kind.symbol, onImage: false)
+                if !excerpt.isEmpty {
+                    Text(excerpt)
+                        .font(.system(size: overviewFont * 0.92))
+                        .foregroundStyle(card.kind == .sticky ? ink.opacity(0.85) : theme.muted)
+                        .lineSpacing(overviewFont * 0.1)
+                        .padding(.horizontal, overviewFont * 0.5)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .clipped()
         }
+    }
+
+    /// The rest of the card's text as plain lines, for the summary view.
+    private var excerpt: String {
+        var lines: [String]
+        switch card.kind {
+        case .link: lines = [card.summary ?? ""]
+        case .place: lines = Place.affordances(card.body).map { "• " + $0 }
+        default:
+            lines = card.body.components(separatedBy: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            // The headline already shows the first line when there's no title.
+            if card.title.isEmpty, !lines.isEmpty { lines.removeFirst() }
+            lines = lines.map { line in
+                var text = line
+                if text.hasPrefix("#") { text = String(text.drop { $0 == "#" }).trimmingCharacters(in: .whitespaces) }
+                for (prefix, bullet) in [("- [ ] ", "☐ "), ("- [x] ", "☑ "), ("- ", "• "), ("* ", "• "), ("> ", "")]
+                where text.hasPrefix(prefix) {
+                    text = bullet + text.dropFirst(prefix.count)
+                    break
+                }
+                return text.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
+            }
+        }
+        return String(lines.joined(separator: "\n").prefix(700))
     }
 
     private func overviewLabel(icon: String?, onImage: Bool) -> some View {
@@ -287,7 +329,7 @@ struct CardView: View {
             if isEditing {
                 TextField("Title", text: titleBinding)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 18 * s, weight: .semibold))
+                    .font(.system(size: max(13, 18 * s), weight: .semibold))
                     .foregroundStyle(theme.text)
                 bodyEditor(size: 14)
             } else {
@@ -417,10 +459,10 @@ struct CardView: View {
             if isEditing {
                 TextField("Place name", text: titleBinding)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16 * s, weight: .semibold))
+                    .font(.system(size: max(13, 16 * s), weight: .semibold))
                     .foregroundStyle(theme.text)
                     .frame(height: Place.titleHeight * s)
-                CardTextEditor(text: bodyBinding, size: 13.5 * s, color: theme.text,
+                CardTextEditor(text: bodyBinding, size: max(12, 13.5 * s), color: theme.text,
                                takePending: store.takePendingTyping)
             } else {
                 Text(card.title.isEmpty ? "Place" : card.title)

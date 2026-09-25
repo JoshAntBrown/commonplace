@@ -113,6 +113,11 @@ final class BoardStore {
     /// Below this zoom, labels and connection dots only show for focused cards,
     /// and cards switch to their overview rendering.
     static let detailZoom: CGFloat = 0.6
+    /// Below this, card text would be too small to read at full detail, so
+    /// cards show a readable summary instead (text keeps a legible size and
+    /// the card shows less of it).
+    static let summaryZoom: CGFloat = 0.75
+    /// Below this, videos show a poster and reference chips hide.
     static let overviewZoom: CGFloat = 0.45
 
     /// Where new cards go: under the pointer, or the middle of the view.
