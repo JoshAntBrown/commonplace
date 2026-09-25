@@ -662,7 +662,7 @@ struct HelpOverlay: View {
         ("C · ⇧C", "Reference → click target · thread → click what follows"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
         ("Affordance dot", "Connect that affordance → click a place"), ("T · ⇧T", "Thought about the selection · next thought after it (on a video: at the current time)"),
-        ("A", "Tidy the selected thread"),
+        ("A", "Line up the selected card's thoughts"),
         ("R", "Show every reference as a line"),
         ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · ⇧Return", "Edit or finish · new line"), ("Esc", "Finish editing"),

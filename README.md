@@ -38,7 +38,7 @@ them between boards, and other apps receive the cards' Markdown.
 
 - **Card**: anything on a board (sticky, note, link, video, image, place).
 - **Thread**: the "follows from" link (`parent:` in front-matter). One per card, so a board is a set
-  of trees, drawn as solid curves. **A** tidies the selected thread into columns.
+  of trees, drawn as solid curves. **A** lines up the selected card's thoughts in a column (one level).
 - **Thought** (**T**): a sticky drawn out of the selection and threaded to it; on a video it starts
   with the current time, which seeks the video when clicked. **⇧T**: the next thought after the
   selected one, below it in the same thread (after a video's thought: the next one on the video). **⇧C** then a click makes that card follow the selection.

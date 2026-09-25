@@ -841,10 +841,7 @@ final class BoardStore {
         beginEditing(next)
     }
 
-    /// A: tidy trees. The trees containing the selection, or every tree on the
-    /// board. Each card's children form a column to its right, in their
-    /// current top-to-bottom order; roots stay where they are unless a tidied
-    /// tree would overlap other cards, in which case it moves down to clear them.
+    /// A: tidy the selected card's thoughts, one level deep.
     /// Only ever the selected threads: rearranging a whole board destroys a
     /// spatial arrangement that means something to the user.
     @discardableResult
@@ -870,36 +867,26 @@ final class BoardStore {
             .mapValues { $0.sorted { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }.map(\.id) }
         let gapX: CGFloat = 80, gapY: CGFloat = 24
 
-        func layout(_ id: UUID, at origin: CGPoint, depth: Int) -> CGFloat {
-            guard var f = frames[id] else { return origin.y }
-            f.origin = origin
-            frames[id] = f
-            var bottom = f.maxY
-            var y = origin.y
-            guard depth < 64 else { return bottom }
-            for child in childMap[id] ?? [] {
-                let b = layout(child, at: CGPoint(x: f.maxX + gapX, y: y), depth: depth + 1)
-                bottom = max(bottom, b)
-                y = b + gapY
-            }
-            return bottom
+        func members(_ id: UUID, depth: Int = 0) -> [UUID] {
+            depth > 64 ? [id] : [id] + (childMap[id] ?? []).flatMap { members($0, depth: depth + 1) }
         }
-        func members(_ id: UUID) -> [UUID] { [id] + (childMap[id] ?? []).flatMap(members) }
 
+        // One level: the card's own thoughts form a column to its right, in
+        // their current order. Each moves together with everything that
+        // follows from it, so deeper arrangements are left as they were.
         var tidied = Set<UUID>()
         for root in roots {
-            guard let start = frames[root]?.origin else { continue }
-            _ = layout(root, at: start, depth: 0)
-            let tree = members(root)
-            tidied.formUnion(tree)
-            // Clear anything else on the board by moving this tree down.
-            for _ in 0..<50 {
-                let box = tree.compactMap { frames[$0] }.reduce(CGRect.null) { $0.union($1) }
-                let blockers = frames.filter { !tree.contains($0.key) }.map(\.value)
-                    .filter { $0.intersects(box.insetBy(dx: -12, dy: -12)) }
-                guard let lowest = blockers.map(\.maxY).max() else { break }
-                let dy = lowest + 40 - box.minY
-                for m in tree { frames[m]?.origin.y += dy }
+            guard let rootFrame = frames[root] else { continue }
+            let x = rootFrame.maxX + gapX
+            var y = rootFrame.minY
+            for child in childMap[root] ?? [] {
+                let group = members(child)
+                let box = group.compactMap { frames[$0] }.reduce(CGRect.null) { $0.union($1) }
+                guard let childFrame = frames[child], !box.isNull else { continue }
+                let dx = x - childFrame.minX, dy = y - box.minY
+                for m in group { frames[m] = frames[m]?.offsetBy(dx: dx, dy: dy) }
+                tidied.formUnion(group)
+                y = box.maxY + dy + gapY
             }
         }
         withAnimation(.easeInOut(duration: 0.35)) {
