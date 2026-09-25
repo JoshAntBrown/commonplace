@@ -90,6 +90,26 @@ final class BoardStore {
                width: r.width * scale, height: r.height * scale)
     }
 
+    /// The card under the pointer, if any (topmost).
+    var hoveredCard: UUID? {
+        guard let hover else { return nil }
+        let p = toWorld(hover)
+        return board.cards.last { $0.frame.contains(p) }?.id
+    }
+
+    /// Cards whose connections are brought forward: the selection plus the
+    /// card under the pointer. Everything else recedes.
+    var focusedCards: Set<UUID> {
+        var focus = selection
+        if let hovered = hoveredCard { focus.insert(hovered) }
+        return focus
+    }
+
+    /// Below this zoom, labels and connection dots only show for focused cards,
+    /// and cards switch to their overview rendering.
+    static let detailZoom: CGFloat = 0.6
+    static let overviewZoom: CGFloat = 0.45
+
     /// Where new cards go: under the pointer, or the middle of the view.
     var insertionPoint: CGPoint {
         toWorld(hover ?? CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2))
@@ -173,7 +193,8 @@ final class BoardStore {
             self.update(id) { card in
                 if let t = meta.title, !t.isEmpty { card.title = t }
                 if let d = meta.summary, !d.isEmpty { card.summary = d }
-                if card.kind == .link, let image = meta.image { card.image = image }
+                // Links get a preview image; videos keep it as a poster for zoomed-out views.
+                if card.image == nil || card.kind == .link, let image = meta.image { card.image = image }
             }
         }
         return id

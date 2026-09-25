@@ -38,15 +38,16 @@ struct CanvasView: View {
 
                 ConnectionsLayer(store: store).allowsHitTesting(false)
 
+                // Labels sit under cards so they never cover card text.
+                ForEach(store.board.connections) { connection in
+                    ConnectionHandle(store: store, connection: connection)
+                }
+
                 ForEach(store.board.cards) { card in
                     let r = store.toScreen(card.frame)
                     CardView(store: store, card: card)
                         .frame(width: r.width, height: r.height)
                         .position(x: r.midX, y: r.midY)
-                }
-
-                ForEach(store.board.connections) { connection in
-                    ConnectionHandle(store: store, connection: connection)
                 }
 
                 if let marquee {
@@ -443,10 +444,15 @@ struct ConnectionsLayer: View {
     var body: some View {
         Canvas { ctx, _ in
             let chrome = min(store.scale, 1)
-            let width = max(1, 1.6 * chrome)
+            let focus = store.focusedCards
             for c in store.board.connections {
                 guard let (p1, p2) = store.endpoints(c) else { continue }
-                let color = store.selectedConnection == c.id ? theme.accent : theme.muted
+                // Focus and context: the focused cards' connections come forward,
+                // the rest recede; with no focus, all lines stay quiet.
+                let related = focus.contains(c.from) || focus.contains(c.to) || store.selectedConnection == c.id
+                let color: SwiftUI.Color = related ? theme.accent
+                    : theme.muted.opacity(focus.isEmpty ? 0.55 : 0.18)
+                let width = max(1, (related ? 2 : 1.4) * chrome)
                 var path = Path()
                 path.move(to: p1)
                 path.addLine(to: p2)
@@ -476,6 +482,12 @@ struct ConnectionHandle: View {
     var body: some View {
         if let (p1, p2) = store.endpoints(connection) {
             let selected = store.selectedConnection == connection.id
+            let focus = store.focusedCards
+            let related = selected || focus.contains(connection.from) || focus.contains(connection.to)
+            let detailed = store.scale >= BoardStore.detailZoom
+            let editing = store.editingConnection == connection.id
+            // Labels and dots only when they can be read, or belong to what you're looking at.
+            if editing || related || detailed {
             Group {
                 if store.editingConnection == connection.id {
                     TextField("Label", text: $text)
@@ -495,12 +507,14 @@ struct ConnectionHandle: View {
                         .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
                 } else if !connection.label.isEmpty {
                     Text(connection.label)
-                        .font(.system(size: max(9, 12 * min(store.scale, 1))))
+                        .font(.system(size: related ? 11 : 12 * min(store.scale, 1)))
                         .foregroundStyle(theme.text)
+                        .lineLimit(1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(theme.surface, in: Capsule())
-                        .overlay(Capsule().stroke(selected ? theme.accent : theme.border))
+                        .overlay(Capsule().stroke(related ? theme.accent : theme.border))
+                        .opacity(!focus.isEmpty && !related ? 0.35 : 1)
                 } else {
                     Circle()
                         .fill(selected ? theme.accent : theme.muted)
@@ -520,6 +534,7 @@ struct ConnectionHandle: View {
             }
             .help("Click to select · double-click to label")
             .position(x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2)
+            }
         }
     }
 

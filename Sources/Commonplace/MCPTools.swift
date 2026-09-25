@@ -24,7 +24,9 @@ final class MCPTools {
     a timestamped moment. Leave the user's own words alone unless they ask you to change them.
     - Don't delete the user's cards unless they ask.
     - Bring sources in with clip_url so where things came from is kept.
-    - Put new cards beside what they relate to (near=<card id>) and connect them.
+    - Keep the board calm: put new cards beside what they relate to (near=<card id>), connect only \
+    the strongest relationships (one or two per card), keep labels to a few words, and prefer one \
+    note with a list over many stickies.
     - Omit `board` to use the board on screen. Card ids can be given as a unique prefix.
     - Every change can be undone in the app with ⌘Z.
     """

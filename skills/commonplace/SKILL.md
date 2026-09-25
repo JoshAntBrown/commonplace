@@ -37,6 +37,23 @@ A **thought** is a sticky drawn out of another card (`thought_of`). A thought on
 
 Everything you do is undoable in the app with ⌘Z. Say so if you've made a large change.
 
+## Keep the board calm
+
+A board is read visually. A pile of cards joined by long crossing lines is noise, however good
+each card is.
+
+- **Cluster, don't scatter.** Put each new card `near` the card it grows out of, so related ideas
+  sit together. When you add several cards on one theme, chain them: each one `near` the last.
+- **Connect sparingly.** Draw only the strongest relationships, usually one or two per card. If a
+  card relates to something far away on the board, place it near that thing rather than drawing a
+  long line across the board.
+- **Short labels.** One to three words ("supports", "example of", "tension"), or none when the
+  relationship is obvious.
+- **Fewer, better cards.** Several points on one idea belong in one note with a list, not five
+  stickies. Stickies are for single, quick thoughts.
+- **Big batches:** if you're adding more than about eight cards, say so first and suggest the
+  user look at them with `focus_card` as you go.
+
 ## Recipes
 
 - **Summarise a talk from its moments:** `get_video_moments` on the video, then write one note

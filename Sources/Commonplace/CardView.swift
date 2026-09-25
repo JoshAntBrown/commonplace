@@ -147,7 +147,21 @@ struct CardView: View {
 
     // MARK: Kinds
 
+    /// Zoomed out, cards trade detail for legibility: a readable headline
+    /// rather than shrunken paragraphs, and a still frame rather than a player.
+    private var overview: Bool {
+        s < BoardStore.overviewZoom && !isEditing && card.kind != .image
+    }
+
     @ViewBuilder private var content: some View {
+        if overview {
+            overviewCard
+        } else {
+            detailContent
+        }
+    }
+
+    @ViewBuilder private var detailContent: some View {
         switch card.kind {
         case .sticky: sticky
         case .note: note
@@ -156,6 +170,68 @@ struct CardView: View {
         case .image: image
         case .place: place
         }
+    }
+
+    /// The card's headline: its title, or the first line of its text with the
+    /// Markdown stripped (a moment keeps its timestamp).
+    private var headline: String {
+        if !card.title.isEmpty { return card.title }
+        let line = card.body.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+        var text = line
+        if text.hasPrefix("#") {
+            text = String(text.drop { $0 == "#" })
+        } else if let prefix = ["- [ ] ", "- [x] ", "- ", "* ", "> "].first(where: text.hasPrefix) {
+            text = String(text.dropFirst(prefix.count))
+        }
+        let plain = text.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
+        return plain.isEmpty ? card.kind.label : plain
+    }
+
+    /// Readable at any zoom: grows as the card shrinks, within limits.
+    private var overviewFont: CGFloat { min(13, max(8, 30 * s)) }
+
+    private var posterURL: URL? {
+        if let image = card.image, image.hasPrefix("http") { return URL(string: image) }
+        if case .youtube(let id, _)? = card.url.flatMap(URL.init(string:)).flatMap(VideoSource.detect) {
+            return URL(string: "https://i.ytimg.com/vi/\(id)/hqdefault.jpg")
+        }
+        return nil
+    }
+
+    @ViewBuilder private var overviewCard: some View {
+        if card.kind == .video {
+            Color.black
+                .overlay {
+                    if let url = posterURL {
+                        AsyncImage(url: url) { phase in
+                            phase.image?.resizable().aspectRatio(contentMode: .fill)
+                        }
+                    }
+                }
+                .overlay(alignment: .bottomLeading) { overviewLabel(icon: "play.fill", onImage: true) }
+                .clipped()
+        } else {
+            overviewLabel(icon: card.kind == .sticky ? nil : card.kind.symbol, onImage: false)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private func overviewLabel(icon: String?, onImage: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: overviewFont * 0.35) {
+            if let icon { Image(systemName: icon).font(.system(size: overviewFont * 0.8)) }
+            Text(headline)
+                .font(.system(size: overviewFont, weight: .semibold))
+                .lineLimit(nil)
+                .underline(card.kind == .place)
+        }
+        .foregroundStyle(onImage ? .white : ink)
+        .padding(overviewFont * 0.5)
+        .background(onImage ? AnyShapeStyle(.black.opacity(0.55)) : AnyShapeStyle(.clear),
+                    in: RoundedRectangle(cornerRadius: overviewFont * 0.3))
+        .padding(onImage ? overviewFont * 0.3 : 0)
     }
 
     private var sticky: some View {
