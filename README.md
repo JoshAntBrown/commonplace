@@ -41,4 +41,6 @@ affordance. Connections remember which affordance they start from (`fromItem` in
 - X posts: the MP4 behind the post is resolved and played natively (AVKit).
 - Vimeo and other pages: loaded in a web view.
 
-Press **T** on a selected video to add a `- [m:ss]` note; click a timestamp to jump back.
+Press **T** (or **+ Moment**) on a selected video to add a moment: a sticky stamped with the
+current time, stacked beside the video and connected to it. Click its timestamp to jump back;
+connect it to anything else like any other card.

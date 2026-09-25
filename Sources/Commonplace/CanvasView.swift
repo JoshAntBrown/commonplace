@@ -290,8 +290,8 @@ struct CanvasView: View {
         case "c": store.startConnecting()
         case "p": store.add(.place, at: p, edit: true)
         case "t":
-            guard let id = store.selection.first, store.card(id)?.kind == .video else { return false }
-            store.addTimestamp(id)
+            guard let id = store.selection.first, store.videoID(for: id) != nil else { return false }
+            store.addMoment(id)
         case "b":
             let defaults = UserDefaults.standard
             defaults.set(!defaults.bool(forKey: "showBrowser"), forKey: "showBrowser")
@@ -490,7 +490,7 @@ struct HelpOverlay: View {
         ("⌘V", "Paste URL, image or text"), ("Double-click", "Sticky on canvas / edit card"),
         ("C", "Connect selection → click target"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
-        ("Affordance dot", "Connect that affordance → click a place"), ("T", "Note current moment on a video"),
+        ("Affordance dot", "Connect that affordance → click a place"), ("T", "Moment sticky from a video or its moments"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Delete", "Remove selection"), ("Scroll · ⌘-scroll", "Pan · zoom"),
         ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),

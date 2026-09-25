@@ -46,6 +46,7 @@ final class BoardStore {
         self.board = board
         offset = CGPoint(x: board.viewport.x, y: board.viewport.y)
         scale = board.viewport.scale
+        for i in self.board.cards.indices { fitHeight(&self.board.cards[i]) }
         terminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.saveNow() }
@@ -103,9 +104,7 @@ final class BoardStore {
     func update(_ id: UUID, content: Bool = true, _ change: (inout Card) -> Void) {
         guard let i = board.cards.firstIndex(where: { $0.id == id }) else { return }
         change(&board.cards[i])
-        if board.cards[i].kind == .place {
-            board.cards[i].frame.size.height = Place.height(for: board.cards[i].body, editing: editing == id)
-        }
+        fitHeight(&board.cards[i])
         if content { dirty.insert(id) }
         scheduleSave()
     }
@@ -363,6 +362,8 @@ final class BoardStore {
     func beginEditing(_ id: UUID) {
         selection = [id]
         selectedConnection = nil
+        // A plain video card has nothing to edit; its notes are moment stickies.
+        if let card = card(id), card.kind == .video, card.body.isEmpty { return }
         editing = id
     }
 
@@ -513,17 +514,43 @@ final class BoardStore {
         return v
     }
 
-    /// Appends a `- [m:ss] ` line at the video's current time and starts editing.
-    func addTimestamp(_ id: UUID) {
-        video(id).currentTime { [weak self] t in
-            guard let self else { return }
-            self.update(id) { card in
-                var body = card.body
-                if !body.isEmpty && !body.hasSuffix("\n") { body += "\n" }
-                body += "- [\(Timestamp.format(t))] "
-                card.body = body
+    /// Places and plain video cards size themselves; only their width is free.
+    private func fitHeight(_ card: inout Card) {
+        switch card.kind {
+        case .place:
+            card.frame.size.height = Place.height(for: card.body, editing: editing == card.id)
+        case .video where card.body.isEmpty:
+            card.frame.size.height = Card.videoHeight(width: card.frame.width)
+        default:
+            break
+        }
+    }
+
+    /// The video a card belongs to: itself, or the video a moment marks.
+    func videoID(for id: UUID) -> UUID? {
+        guard let card = card(id) else { return nil }
+        if card.kind == .video { return id }
+        guard let v = card.momentOf, self.card(v)?.kind == .video else { return nil }
+        return v
+    }
+
+    /// Adds a sticky for the video's current moment, connected to the video
+    /// and stacked in a column beside it, and starts editing it.
+    func addMoment(_ id: UUID) {
+        guard let videoID = videoID(for: id) else { return }
+        video(videoID).currentTime { [weak self] t in
+            guard let self, let video = self.card(videoID) else { return }
+            let x = video.frame.maxX + 60
+            let column = self.board.cards.filter { $0.momentOf == videoID && abs($0.frame.minX - x) < 1 }
+            let y = column.map { $0.frame.maxY + 16 }.max() ?? video.frame.minY
+            let frame = CGRect(x: x, y: y, width: 220, height: 130)
+            let moment = self.add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
+                $0.frame = frame
+                $0.momentOf = videoID
+                $0.body = "[\(Timestamp.format(t))] "
             }
-            self.beginEditing(id)
+            self.connect(videoID, moment)
+            self.beginEditing(moment)
         }
     }
 

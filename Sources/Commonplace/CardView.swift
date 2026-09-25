@@ -94,7 +94,7 @@ struct CardView: View {
         .font(.system(size: 11.5 * s))
         .foregroundStyle(theme.muted)
         .padding(.horizontal, 10 * s)
-        .frame(height: 30 * s)
+        .frame(height: Card.headerHeight * s)
         .frame(maxWidth: .infinity)
         .background(card.color == .none ? theme.raised : theme.color(card.color).opacity(0.35))
     }
@@ -132,7 +132,7 @@ struct CardView: View {
             size: size * s,
             color: empty ? (card.kind == .sticky ? ink.opacity(0.5) : theme.muted) : ink,
             accent: card.kind == .sticky ? ink : theme.accent,
-            onSeek: card.kind == .video ? { store.video(card.id).seek($0) } : nil)
+            onSeek: store.videoID(for: card.id).map { video in { store.video(video).seek($0) } })
     }
 
     // MARK: Kinds
@@ -216,14 +216,14 @@ struct CardView: View {
     private var video: some View {
         VStack(alignment: .leading, spacing: 0) {
             header {
-                Button { store.addTimestamp(card.id) } label: {
+                Button { store.addMoment(card.id) } label: {
                     HStack(spacing: 3 * s) {
                         Image(systemName: "plus")
                         Text("Moment")
                     }
                 }
                 .buttonStyle(.plain)
-                .help("Note the current moment (T)")
+                .help("Add a sticky for this moment (T)")
                 openButton
             }
             Group {
@@ -240,9 +240,10 @@ struct CardView: View {
             }
             .frame(height: card.frame.width * s * 9 / 16)
             .onAppear { store.resolveMedia(card.id) }
+            // Older boards kept moments in the card; still show them.
             if isEditing {
                 notes.padding(12 * s)
-            } else {
+            } else if !card.body.isEmpty {
                 ScrollView { notes.padding(12 * s) }
             }
         }
@@ -253,8 +254,8 @@ struct CardView: View {
             bodyEditor(size: 13.5)
         } else if !card.body.isEmpty {
             markdown(13.5)
-        } else if isSelected {
-            Text(card.kind == .video ? "Press T to note the current moment" : "Double-click to add notes")
+        } else if isSelected, card.kind != .video {
+            Text("Double-click to add notes")
                 .font(.system(size: 12 * s))
                 .foregroundStyle(theme.muted)
         }
@@ -370,6 +371,15 @@ struct CardTextEditor: View {
             .scrollContentBackground(.hidden)
             .background(Color.clear)
             .focused($focused)
-            .onAppear { DispatchQueue.main.async { focused = true } }
+            .onAppear {
+                DispatchQueue.main.async {
+                    focused = true
+                    // Start typing after any existing text, e.g. a moment's timestamp.
+                    DispatchQueue.main.async {
+                        guard let tv = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+                        tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+                    }
+                }
+            }
     }
 }

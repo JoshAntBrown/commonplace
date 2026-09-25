@@ -31,7 +31,7 @@ enum CardKind: String, Codable, CaseIterable {
         case .sticky: CGSize(width: 220, height: 200)
         case .note: CGSize(width: 320, height: 240)
         case .link: CGSize(width: 320, height: 300)
-        case .video: CGSize(width: 480, height: 470)
+        case .video: CGSize(width: 480, height: Card.videoHeight(width: 480))
         case .image: CGSize(width: 320, height: 240)
         case .place: CGSize(width: 220, height: Place.height(for: ""))
         }
@@ -58,11 +58,18 @@ struct Card: Identifiable, Equatable {
     var media: String?
     /// The page this card was clipped from.
     var source: String?
+    /// For a moment sticky: the video card it marks a point in.
+    var momentOf: UUID?
     var created = Date()
     /// The markdown file this card was loaded from, if any.
     var file: String?
 
     var fileName: String { file ?? id.uuidString.lowercased() + ".md" }
+
+    static let headerHeight: CGFloat = 30
+
+    /// A video card is its header plus a 16:9 player; moments live in stickies.
+    static func videoHeight(width: CGFloat) -> CGFloat { headerHeight + width * 9 / 16 }
 }
 
 struct Connection: Identifiable, Codable, Equatable {
