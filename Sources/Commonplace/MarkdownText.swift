@@ -54,24 +54,35 @@ struct MarkdownText: View {
         }
     }
 
+    /// A timestamp is an inline, clickable chip so the note wraps beneath it
+    /// rather than hanging in a column beside it.
     @ViewBuilder private func line(_ s: String) -> some View {
         if let ts = Self.timestamp(s) {
-            HStack(alignment: .firstTextBaseline, spacing: size * 0.4) {
-                Button { onSeek?(ts.seconds) } label: {
-                    Text(ts.label)
-                        .font(.system(size: size * 0.82, weight: .semibold, design: .monospaced))
-                        .padding(.horizontal, size * 0.4)
-                        .padding(.vertical, size * 0.1)
-                        .background(accent.opacity(0.18), in: Capsule())
-                        .foregroundStyle(accent)
-                }
-                .buttonStyle(.plain)
-                .help(onSeek == nil ? "" : "Jump to \(ts.label)")
-                Text(Self.inline(ts.rest)).font(.system(size: size))
-            }
+            Text(chip(ts) + AttributedString(" ") + Self.inline(ts.rest))
+                .font(.system(size: size))
+                .tint(accent)
+                .environment(\.openURL, OpenURLAction { url in
+                    guard url.scheme == Self.seekScheme,
+                          let seconds = Double(url.absoluteString.dropFirst(Self.seekScheme.count + 1)) else {
+                        return .systemAction
+                    }
+                    onSeek?(seconds)
+                    return .handled
+                })
         } else {
             Text(Self.inline(s)).font(.system(size: size))
         }
+    }
+
+    private static let seekScheme = "commonplace-seek"
+
+    private func chip(_ ts: Stamp) -> AttributedString {
+        var chip = AttributedString("\u{2009}\(ts.label)\u{2009}")
+        chip.font = .system(size: size * 0.82, weight: .semibold, design: .monospaced)
+        chip.foregroundColor = accent
+        chip.backgroundColor = accent.opacity(0.18)
+        if onSeek != nil { chip.link = URL(string: "\(Self.seekScheme):\(ts.seconds)") }
+        return chip
     }
 
     static func parse(_ text: String) -> [Block] {
