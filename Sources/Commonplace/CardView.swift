@@ -8,6 +8,8 @@ struct CardView: View {
     let store: BoardStore
     let card: Card
     @Environment(\.theme) private var theme
+    @GestureState private var dragging = false
+    @GestureState private var resizing = false
 
     private var s: CGFloat { store.scale }
     private var isSelected: Bool { store.selection.contains(card.id) }
@@ -36,6 +38,9 @@ struct CardView: View {
             .simultaneousGesture(TapGesture(count: 2).onEnded {
                 if !isEditing { store.beginEditing(card.id) }
             })
+            // GestureState resets even when a gesture is cancelled.
+            .onChange(of: dragging) { _, active in if !active { store.endDrag() } }
+            .onChange(of: resizing) { _, active in if !active { store.endResize() } }
     }
 
     // MARK: Chrome
@@ -48,11 +53,10 @@ struct CardView: View {
 
     private var moveGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .updating($dragging) { _, state, _ in state = true }
             .onChanged { value in
-                if !store.isDragging {
-                    store.beginDrag(card.id, shift: NSEvent.modifierFlags.contains(.shift))
-                }
-                store.drag(value.translation)
+                store.dragChanged(card.id, start: value.startLocation, translation: value.translation,
+                                  shift: NSEvent.modifierFlags.contains(.shift))
             }
             .onEnded { _ in store.endDrag() }
     }
@@ -67,7 +71,8 @@ struct CardView: View {
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { store.resize(card.id, by: $0.translation) }
+                    .updating($resizing) { _, state, _ in state = true }
+                    .onChanged { store.resize(card.id, start: $0.startLocation, by: $0.translation) }
                     .onEnded { _ in store.endResize() }
             )
             .help("Resize")

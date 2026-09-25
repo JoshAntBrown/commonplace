@@ -6,7 +6,9 @@ import UniformTypeIdentifiers
 struct CanvasView: View {
     @Bindable var store: BoardStore
     @Environment(\.theme) private var theme
-    @State private var panStart: CGPoint?
+    /// Canvas offset and pointer position when the current pan began.
+    @State private var panOrigin: (offset: CGPoint, touch: CGPoint)?
+    @GestureState private var panning = false
     @State private var monitors: [Any] = []
     @State private var linkText = ""
 
@@ -16,6 +18,7 @@ struct CanvasView: View {
                 GridBackground(offset: store.offset, scale: store.scale, theme: theme)
                     .contentShape(Rectangle())
                     .gesture(backgroundGesture)
+                    .onChange(of: panning) { _, active in if !active { panOrigin = nil } }
                     .simultaneousGesture(SpatialTapGesture(count: 2).onEnded { tap in
                         store.add(.sticky, at: store.toWorld(tap.location), edit: true)
                     })
@@ -102,13 +105,16 @@ struct CanvasView: View {
 
     private var backgroundGesture: some Gesture {
         DragGesture(minimumDistance: 0)
+            .updating($panning) { _, state, _ in state = true }
             .onChanged { value in
-                if panStart == nil { panStart = store.offset }
-                guard let start = panStart else { return }
-                store.offset = CGPoint(x: start.x + value.translation.width, y: start.y + value.translation.height)
+                if panOrigin == nil || panOrigin?.touch != value.startLocation {
+                    panOrigin = (store.offset, value.startLocation)
+                }
+                guard let origin = panOrigin?.offset else { return }
+                store.offset = CGPoint(x: origin.x + value.translation.width, y: origin.y + value.translation.height)
             }
             .onEnded { value in
-                panStart = nil
+                panOrigin = nil
                 if abs(value.translation.width) < 3 && abs(value.translation.height) < 3 {
                     store.clearSelection()
                     NSApp.keyWindow?.makeFirstResponder(nil)

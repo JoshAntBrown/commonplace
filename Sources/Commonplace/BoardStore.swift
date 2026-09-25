@@ -29,7 +29,10 @@ final class BoardStore {
     @ObservationIgnored private var removedFiles: [String] = []
     @ObservationIgnored private var saveWork: DispatchWorkItem?
     @ObservationIgnored private var dragOrigins: [UUID: CGPoint]?
+    @ObservationIgnored private var dragStart: CGPoint?
+    @ObservationIgnored private var didMove = false
     @ObservationIgnored private var resizeOrigin: CGSize?
+    @ObservationIgnored private var resizeStart: CGPoint?
     @ObservationIgnored private var videos: [UUID: VideoController] = [:]
     @ObservationIgnored private var terminateObserver: Any?
     @ObservationIgnored private var isClosed = false
@@ -286,10 +289,26 @@ final class BoardStore {
         editing = id
     }
 
-    var isDragging: Bool { dragOrigins != nil }
+    // Gestures can be cancelled without their end callback firing (a pinch or
+    // double-click mid-drag), so each session is keyed by where it started and
+    // stale state is discarded rather than trusted.
 
-    /// Called on mouse-down on a card.
-    func beginDrag(_ id: UUID, shift: Bool) {
+    /// Called for every change of a card drag.
+    func dragChanged(_ id: UUID, start: CGPoint, translation t: CGSize, shift: Bool) {
+        if dragOrigins == nil || dragStart != start {
+            dragStart = start
+            didMove = false
+            beginDrag(id, shift: shift)
+        }
+        guard let origins = dragOrigins, !origins.isEmpty else { return }
+        if abs(t.width) + abs(t.height) > 1 { didMove = true }
+        for i in board.cards.indices {
+            guard let o = origins[board.cards[i].id] else { continue }
+            board.cards[i].frame.origin = CGPoint(x: o.x + t.width / scale, y: o.y + t.height / scale)
+        }
+    }
+
+    private func beginDrag(_ id: UUID, shift: Bool) {
         if let from = connectingFrom {
             connect(from, id)
             connectingFrom = nil
@@ -309,16 +328,13 @@ final class BoardStore {
             uniquingKeysWith: { a, _ in a })
     }
 
-    func drag(_ t: CGSize) {
-        guard let origins = dragOrigins, !origins.isEmpty else { return }
-        for i in board.cards.indices {
-            guard let o = origins[board.cards[i].id] else { continue }
-            board.cards[i].frame.origin = CGPoint(x: o.x + t.width / scale, y: o.y + t.height / scale)
-        }
-    }
-
+    /// Safe to call more than once per drag.
     func endDrag() {
+        guard dragOrigins != nil else { return }
         dragOrigins = nil
+        dragStart = nil
+        guard didMove else { return }
+        didMove = false
         // Bring the moved cards to the front.
         let moving = board.cards.filter { selection.contains($0.id) }
         if !moving.isEmpty, board.cards.suffix(moving.count).map(\.id) != moving.map(\.id) {
@@ -328,9 +344,12 @@ final class BoardStore {
         scheduleSave()
     }
 
-    func resize(_ id: UUID, by t: CGSize) {
+    func resize(_ id: UUID, start: CGPoint, by t: CGSize) {
         guard let card = card(id) else { return }
-        if resizeOrigin == nil { resizeOrigin = card.frame.size }
+        if resizeOrigin == nil || resizeStart != start {
+            resizeStart = start
+            resizeOrigin = card.frame.size
+        }
         let o = resizeOrigin ?? card.frame.size
         update(id, content: false) {
             $0.frame.size = CGSize(width: max(140, o.width + t.width / scale),
@@ -338,7 +357,10 @@ final class BoardStore {
         }
     }
 
-    func endResize() { resizeOrigin = nil }
+    func endResize() {
+        resizeOrigin = nil
+        resizeStart = nil
+    }
 
     // MARK: Connections
 
