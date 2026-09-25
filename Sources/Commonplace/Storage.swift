@@ -160,7 +160,7 @@ enum CardFile {
         if let source = card.source { lines.append("source: \(quote(source))") }
         if card.speed != 1 { lines.append("speed: \(card.speed)") }
         if card.position > 0 { lines.append("position: \(Int(card.position))") }
-        if let origin = card.thoughtOf { lines.append("thought-of: \(origin.uuidString.lowercased())") }
+        if let parent = card.parent { lines.append("parent: \(parent.uuidString.lowercased())") }
         lines.append("created: \(dates.string(from: card.created))")
         lines.append("---")
         lines.append("")
@@ -196,7 +196,7 @@ enum CardFile {
         card.summary = fields["summary"]
         card.media = fields["media"]
         card.source = fields["source"]
-        card.thoughtOf = (fields["thought-of"] ?? fields["moment-of"]).flatMap(UUID.init(uuidString:))
+        card.parent = (fields["parent"] ?? fields["thought-of"] ?? fields["moment-of"]).flatMap(UUID.init(uuidString:))
         card.speed = fields["speed"].flatMap(Double.init) ?? 1
         card.position = fields["position"].flatMap(Double.init) ?? 0
         card.created = fields["created"].flatMap(dates.date(from:)) ?? Date()

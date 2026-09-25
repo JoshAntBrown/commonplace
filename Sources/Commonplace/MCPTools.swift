@@ -19,7 +19,11 @@ final class MCPTools {
 
     static let instructions = """
     Commonplace is the user's thinking canvas: boards of cards (sticky, note, link, video, image, \
-    place) joined by connections. It's a space for exploring ideas, not a document to tidy.
+    place). It's a space for exploring ideas, not a document to tidy.
+    Two kinds of link: a card's `parent` is its sequence link, the card it follows from or forms part \
+    of (one parent each, so the board has a tree that can be tidied and read in order); connections \
+    are references, "this relates to that", anywhere on the board. Use parent for elaboration and \
+    continuation, connect for everything else.
     - Add rather than rewrite. Draw a thought out of a card with add_thought; on a video it becomes \
     a timestamped moment. Leave the user's own words alone unless they ask you to change them.
     - Don't delete the user's cards unless they ask.
@@ -63,17 +67,18 @@ final class MCPTools {
         tool("get_video_moments",
              "A video card's moments (timestamped stickies) in time order, and the current playback position.",
              ["card_id": cardArg, "board": boardArg], required: ["card_id"], readOnly: true),
-        tool("add_card", "Add a sticky, note or breadboard place. Use clip_url for links, videos and images.",
+        tool("add_card", "Add a sticky, note or breadboard place. Use clip_url for links, videos and images. Give `parent` when the card follows from or elaborates another.",
              ["kind": ["type": "string", "enum": ["sticky", "note", "place"]],
               "title": ["type": "string", "description": "Note title or place name."],
               "body": ["type": "string", "description": "Markdown text. For a place: one affordance per line."],
               "color": ["type": "string", "enum": colors],
-              "near": ["type": "string", "description": "Card id to place this beside."],
-              "connect_from": ["type": "string", "description": "Card id to draw an arrow from to the new card."],
+              "parent": ["type": "string", "description": "Card id this follows from (sequence link); it's placed in that card's column."],
+              "near": ["type": "string", "description": "Card id to place this beside, without a sequence link."],
+              "connect_from": ["type": "string", "description": "Card id to draw a reference from to the new card."],
               "x": ["type": "number"], "y": ["type": "number"], "board": boardArg],
              required: ["kind"], readOnly: false),
         tool("add_thought",
-             "Draw a thought out of a card: a sticky beside it, connected to it. On a video (or one of its moments) it's a moment; the timestamp defaults to the current playback position.",
+             "Draw a thought out of a card: a sticky that follows from it (its parent), placed beside it. On a video (or one of its moments) it's a moment; the timestamp defaults to the current playback position.",
              ["card_id": cardArg, "body": ["type": "string"],
               "timestamp": ["type": "number", "description": "Seconds into the video, for moments."],
               "board": boardArg],
@@ -85,7 +90,7 @@ final class MCPTools {
               "x": ["type": "number"], "y": ["type": "number"], "width": ["type": "number"], "height": ["type": "number"],
               "board": boardArg],
              required: ["card_id"], readOnly: false),
-        tool("connect", "Draw an arrow between two cards, optionally labelled with why they relate.",
+        tool("connect", "Add a reference between two cards (this relates to that), optionally labelled with why. For 'follows from / part of', use set_parent instead.",
              ["from": cardArg, "to": cardArg, "label": ["type": "string"],
               "from_affordance": ["type": "string", "description": "For a place card: the affordance line the arrow starts from."],
               "board": boardArg],
@@ -95,6 +100,15 @@ final class MCPTools {
              ["url": ["type": "string"], "near": ["type": "string", "description": "Card id to place this beside."],
               "board": boardArg],
              required: ["url"], readOnly: false),
+        tool("set_parent",
+             "Set a card's sequence link: the card it follows from or forms part of. Replaces any reference between the two; an old parent is kept as a reference. Pass parent_id null to detach.",
+             ["card_id": cardArg, "parent_id": ["type": ["string", "null"], "description": "Card id, or null to detach."],
+              "board": boardArg],
+             required: ["card_id", "parent_id"], readOnly: false),
+        tool("tidy",
+             "Lay out a tree neatly: each card's children in a column to its right, in order. Tidies the tree containing card_id, or every tree on the board. Undoable.",
+             ["card_id": ["type": "string", "description": "Any card in the tree; omit for every tree."], "board": boardArg],
+             readOnly: false),
         tool("delete_card", "Remove a card and its connections. Only when the user asks; it can be undone with ⌘Z.",
              ["card_id": cardArg, "board": boardArg], required: ["card_id"], readOnly: false, destructive: true),
         tool("create_board", "Create a new, empty board.",
@@ -121,6 +135,8 @@ final class MCPTools {
             case "update_card": done(.success(try updateCard(a)))
             case "connect": done(.success(try connect(a)))
             case "clip_url": done(.success(try clipURL(a)))
+            case "set_parent": done(.success(try setParent(a)))
+            case "tidy": done(.success(try tidy(a)))
             case "delete_card": done(.success(try deleteCard(a)))
             case "create_board": done(.success(try createBoard(a)))
             case "focus_card": done(.success(try focusCard(a)))
@@ -191,7 +207,7 @@ final class MCPTools {
             throw ToolError("That card isn't a video or one of its moments.")
         }
         let moments = store.board.cards
-            .filter { $0.thoughtOf == videoID }
+            .filter { $0.parent == videoID }
             .map { card -> (Double, [String: Any]) in
                 let seconds = MarkdownText.timestamp(card.body.components(separatedBy: "\n").first ?? "")?.seconds
                 return (seconds ?? .infinity, Self.json(card, full: true))
@@ -211,7 +227,10 @@ final class MCPTools {
         }
         let size = kind.defaultSize
         var frame: CGRect?
-        if let near = a["near"] {
+        let parent = try a["parent"].map { try cardID($0, in: store) }
+        if let parent, a["x"] == nil {
+            frame = store.columnSpot(beside: parent, size: size)
+        } else if let near = a["near"] {
             frame = store.columnSpot(beside: try cardID(near, in: store), size: size)
         } else if let x = Self.number(a["x"]), let y = Self.number(a["y"]) {
             frame = CGRect(x: x, y: y, width: size.width, height: size.height)
@@ -223,6 +242,7 @@ final class MCPTools {
             if let title = a["title"] as? String { card.title = title }
             if let body = a["body"] as? String { card.body = body }
             if let color = (a["color"] as? String).flatMap(CardColor.init(rawValue:)) { card.color = color }
+            card.parent = parent
         }
         store.fitPlace(id)
         if let from { store.connect(from, id, select: false) }
@@ -299,6 +319,23 @@ final class MCPTools {
         var result = try cardResult(id, in: store) as? [String: Any] ?? [:]
         result["note"] = "Title and preview fill in over the next few seconds."
         return result
+    }
+
+    private func setParent(_ a: [String: Any]) throws -> Any {
+        let store = try self.store(a)
+        let id = try cardID(a["card_id"], in: store)
+        let parent: UUID? = (a["parent_id"] is NSNull || a["parent_id"] == nil) ? nil : try cardID(a["parent_id"], in: store)
+        guard store.setParent(id, parent) else {
+            throw ToolError("That would make a card follow from itself or one of its own descendants.")
+        }
+        return try cardResult(id, in: store)
+    }
+
+    private func tidy(_ a: [String: Any]) throws -> Any {
+        let store = try self.store(a)
+        let ids: Set<UUID>? = try a["card_id"].map { [try cardID($0, in: store)] }
+        store.tidy(ids ?? [])
+        return ["board": store.board.name, "tidied": ids == nil ? "every tree" : "one tree"]
     }
 
     private func deleteCard(_ a: [String: Any]) throws -> Any {
@@ -387,7 +424,7 @@ final class MCPTools {
         if let source = card.source { d["source"] = source }
         if let summary = card.summary, !summary.isEmpty { d["summary"] = summary }
         if card.color != .none { d["color"] = card.color.rawValue }
-        if let origin = card.thoughtOf { d["thought_of"] = origin.uuidString.lowercased() }
+        if let parent = card.parent { d["parent"] = parent.uuidString.lowercased() }
         if let ts = MarkdownText.timestamp(card.body.components(separatedBy: "\n").first ?? "") { d["timestamp"] = ts.seconds }
         if card.kind == .place { d["affordances"] = Place.affordances(card.body) }
         if card.kind == .video {

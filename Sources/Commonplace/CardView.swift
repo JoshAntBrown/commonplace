@@ -48,6 +48,16 @@ struct CardView: View {
             .onChange(of: dragging) { _, active in if !active { store.endDrag() } }
             .onChange(of: resizing) { _, active in if !active { store.endResize() } }
             .onChange(of: isEditing) { _, _ in if card.kind == .place { store.fitPlace(card.id) } }
+            .contextMenu {
+                Button("Branch a Thought") { store.selection = [card.id]; store.addThought() }
+                Button("Link What Follows…") { store.selection = [card.id]; store.startSequenceLink() }
+                Button("Tidy Tree") { store.tidy([card.id]) }
+                if card.parent != nil {
+                    Divider()
+                    Button("Make Sequence Link a Reference") { store.makeReference(card.id) }
+                    Button("Detach from Sequence") { store.setParent(card.id, nil) }
+                }
+            }
     }
 
     // MARK: Chrome

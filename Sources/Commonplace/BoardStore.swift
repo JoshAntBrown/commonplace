@@ -17,6 +17,8 @@ final class BoardStore {
     var connectingFrom: UUID?
     /// Affordance the pending connection starts from, when connecting from a place.
     var connectingItem: String?
+    /// The pending link is a sequence link: the card clicked next follows from `connectingFrom`.
+    var connectingSequence = false
     /// Pointer location in canvas coordinates.
     var hover: CGPoint?
     var showHelp = false
@@ -70,6 +72,7 @@ final class BoardStore {
         offset = CGPoint(x: board.viewport.x, y: board.viewport.y)
         scale = board.viewport.scale
         for i in self.board.cards.indices { fitHeight(&self.board.cards[i]) }
+        migrateSequenceLinks()
         terminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.saveNow() }
@@ -395,6 +398,7 @@ final class BoardStore {
         editingConnection = nil
         connectingFrom = nil
         connectingItem = nil
+        connectingSequence = false
     }
 
     /// Re-fits a place card's height, e.g. when editing starts or ends.
@@ -461,9 +465,14 @@ final class BoardStore {
             window.makeFirstResponder(nil)
         }
         if let from = connectingFrom {
-            connect(from, id, item: connectingItem)
+            if connectingSequence {
+                if !setParent(id, from) { NSSound.beep() }
+            } else {
+                connect(from, id, item: connectingItem)
+            }
             connectingFrom = nil
             connectingItem = nil
+            connectingSequence = false
             dragOrigins = [:]
             return
         }
@@ -528,6 +537,7 @@ final class BoardStore {
         selection = [id]
         connectingFrom = id
         connectingItem = item
+        connectingSequence = false
     }
 
     @discardableResult
@@ -630,8 +640,162 @@ final class BoardStore {
     func videoID(for id: UUID) -> UUID? {
         guard let card = card(id) else { return nil }
         if card.kind == .video { return id }
-        guard let v = card.thoughtOf, self.card(v)?.kind == .video else { return nil }
+        guard let v = card.parent, self.card(v)?.kind == .video else { return nil }
         return v
+    }
+
+    // MARK: Sequence links
+
+    func children(of id: UUID) -> [Card] {
+        board.cards.filter { $0.parent == id }
+            .sorted { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }
+    }
+
+    /// Would making `parent` the parent of `child` loop back on itself?
+    func wouldCycle(child: UUID, parent: UUID) -> Bool {
+        var cursor: UUID? = parent
+        var seen = Set<UUID>()
+        while let c = cursor, seen.insert(c).inserted {
+            if c == child { return true }
+            cursor = card(c)?.parent
+        }
+        return false
+    }
+
+    /// Makes `child` follow from `parent` (or detaches it with nil). A
+    /// reference between the two becomes redundant and is removed.
+    @discardableResult
+    func setParent(_ child: UUID, _ parent: UUID?) -> Bool {
+        guard card(child) != nil else { return false }
+        if let parent {
+            guard card(parent) != nil, parent != child, !wouldCycle(child: child, parent: parent) else { return false }
+        }
+        checkpoint()
+        if let parent {
+            board.connections.removeAll { ($0.from == parent && $0.to == child) || ($0.from == child && $0.to == parent) }
+        }
+        // Moving a card to a new parent keeps the old relationship as a reference.
+        if let old = card(child)?.parent, old != parent, card(old) != nil, parent != nil {
+            connect(old, child, select: false)
+        }
+        update(child) { $0.parent = parent }
+        return true
+    }
+
+    /// ⇧C: the next card clicked will follow from the selected one.
+    func startSequenceLink() {
+        guard let id = selection.first else { return }
+        editing = nil
+        connectingFrom = id
+        connectingItem = nil
+        connectingSequence = true
+    }
+
+    /// A reference becomes a sequence link: its target now follows from its source.
+    func makeSequence(_ connectionID: UUID) {
+        guard let c = board.connections.first(where: { $0.id == connectionID }) else { return }
+        if !setParent(c.to, c.from) { NSSound.beep() }
+    }
+
+    /// A sequence link becomes a reference: the card leaves the sequence but
+    /// keeps an arrow from what it came from.
+    func makeReference(_ child: UUID) {
+        guard let parent = card(child)?.parent else { return }
+        checkpoint()
+        update(child) { $0.parent = nil }
+        connect(parent, child, select: false)
+    }
+
+    /// Thoughts used to carry both a parent and an arrow to it; the parent is
+    /// now drawn as the sequence link, so the duplicate arrow goes.
+    private func migrateSequenceLinks() {
+        let parents = Dictionary(board.cards.compactMap { c in c.parent.map { (c.id, $0) } }, uniquingKeysWith: { a, _ in a })
+        let before = board.connections.count
+        board.connections.removeAll { c in
+            parents[c.to] == c.from || parents[c.from] == c.to
+        }
+        if board.connections.count != before { scheduleSave() }
+    }
+
+    /// ⇧T: continue the sequence — a new card after the selected one, sharing
+    /// its parent. From a card with no parent it branches instead, like T.
+    func continueSequence() {
+        guard let id = selection.first, let current = card(id) else { return addThought() }
+        guard let parent = current.parent, videoID(for: id) == nil else { return addThought() }
+        let frame = CGRect(x: current.frame.minX, y: current.frame.maxY + 24, width: current.frame.width, height: 130)
+        let next = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
+            $0.frame = frame
+            $0.parent = parent
+        }
+        beginEditing(next)
+    }
+
+    /// A: tidy trees. The trees containing the selection, or every tree on the
+    /// board. Each card's children form a column to its right, in their
+    /// current top-to-bottom order; roots stay where they are unless a tidied
+    /// tree would overlap other cards, in which case it moves down to clear them.
+    func tidy(_ ids: Set<UUID>? = nil) {
+        let scope = ids ?? selection
+        var roots: [UUID]
+        if scope.isEmpty {
+            roots = board.cards.filter { $0.parent == nil && !children(of: $0.id).isEmpty }.map(\.id)
+        } else {
+            roots = Array(Set(scope.map(root(of:))))
+        }
+        roots.sort { (card($0)?.frame.minY ?? 0) < (card($1)?.frame.minY ?? 0) }
+        guard !roots.isEmpty else { return }
+        checkpoint()
+
+        var frames = Dictionary(board.cards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        let childMap = Dictionary(grouping: board.cards.filter { $0.parent != nil }, by: { $0.parent! })
+            .mapValues { $0.sorted { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }.map(\.id) }
+        let gapX: CGFloat = 80, gapY: CGFloat = 24
+
+        func layout(_ id: UUID, at origin: CGPoint, depth: Int) -> CGFloat {
+            guard var f = frames[id] else { return origin.y }
+            f.origin = origin
+            frames[id] = f
+            var bottom = f.maxY
+            var y = origin.y
+            guard depth < 64 else { return bottom }
+            for child in childMap[id] ?? [] {
+                let b = layout(child, at: CGPoint(x: f.maxX + gapX, y: y), depth: depth + 1)
+                bottom = max(bottom, b)
+                y = b + gapY
+            }
+            return bottom
+        }
+        func members(_ id: UUID) -> [UUID] { [id] + (childMap[id] ?? []).flatMap(members) }
+
+        var tidied = Set<UUID>()
+        for root in roots {
+            guard let start = frames[root]?.origin else { continue }
+            _ = layout(root, at: start, depth: 0)
+            let tree = members(root)
+            tidied.formUnion(tree)
+            // Clear anything else on the board by moving this tree down.
+            for _ in 0..<50 {
+                let box = tree.compactMap { frames[$0] }.reduce(CGRect.null) { $0.union($1) }
+                let blockers = frames.filter { !tree.contains($0.key) }.map(\.value)
+                    .filter { $0.intersects(box.insetBy(dx: -12, dy: -12)) }
+                guard let lowest = blockers.map(\.maxY).max() else { break }
+                let dy = lowest + 40 - box.minY
+                for m in tree { frames[m]?.origin.y += dy }
+            }
+        }
+        withAnimation(.easeInOut(duration: 0.35)) {
+            for i in board.cards.indices where tidied.contains(board.cards[i].id) {
+                if let f = frames[board.cards[i].id] { board.cards[i].frame = f }
+            }
+        }
+        scheduleSave()
+    }
+
+    func root(of id: UUID) -> UUID {
+        var current = id
+        var seen: Set<UUID> = [id]
+        while let p = card(current)?.parent, card(p) != nil, seen.insert(p).inserted { current = p }
+        return current
     }
 
     /// T: draw a thought out of whatever is selected. From a video (or one
@@ -657,17 +821,16 @@ final class BoardStore {
         }
     }
 
-    /// A sticky connected from `origin`, stacked in a column to its right.
+    /// A sticky following from `origin`, stacked in a column to its right.
     /// Agents pass `interactive: false` so the user's selection and focus stay put.
     @discardableResult
     func placeThought(from origin: UUID, body: String, interactive: Bool = true) -> UUID? {
         guard let frame = columnSpot(beside: origin, size: CGSize(width: 220, height: 130)) else { return nil }
         let thought = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY), select: interactive) {
             $0.frame = frame
-            $0.thoughtOf = origin
+            $0.parent = origin
             $0.body = body
         }
-        connect(origin, thought, select: interactive)
         if interactive { beginEditing(thought) }
         return thought
     }
@@ -698,6 +861,18 @@ final class BoardStore {
             removedFiles.append(card.fileName)
             dirty.remove(card.id)
             videos[card.id] = nil
+        }
+        // Children of a removed card move up to its nearest surviving ancestor.
+        let parents = Dictionary(board.cards.map { ($0.id, $0.parent) }, uniquingKeysWith: { a, _ in a })
+        func survivor(_ id: UUID?) -> UUID? {
+            var cursor = id
+            var hops = 0
+            while let c = cursor, ids.contains(c), hops < 64 { cursor = parents[c] ?? nil; hops += 1 }
+            return cursor
+        }
+        for i in board.cards.indices where board.cards[i].parent.map(ids.contains) == true {
+            board.cards[i].parent = survivor(board.cards[i].parent)
+            dirty.insert(board.cards[i].id)
         }
         board.cards.removeAll { ids.contains($0.id) }
         board.connections.removeAll { ids.contains($0.from) || ids.contains($0.to) }

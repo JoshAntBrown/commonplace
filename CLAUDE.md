@@ -71,6 +71,9 @@ Obsidian-friendly; add front-matter keys rather than inventing sidecar files. Te
 - Structure-preserving (after Alexander): good interactions let a board grow piecemeal,
   strengthening what's there rather than forcing reorganisation. Drawing a thought out of a card
   is the model.
+- Two kinds of link: the sequence link (`Card.parent`, one per card, a tree) gives order and is
+  what layout, folding and reading follow; references (`Connection`) are the web across it and
+  stay quiet until focused. Don't blur them.
 - Everything is a first-class card that can be connected: moments and thoughts are stickies, not
   fields inside other cards.
 - Keyboard-first: every common action has a single-key shortcut on the canvas.

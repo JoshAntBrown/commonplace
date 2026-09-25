@@ -22,6 +22,18 @@ Everything lives in `~/Commonplace/<Board>/`:
 
 Markdown files dropped into `cards/` by hand appear on the board on next open.
 
+## Two kinds of link
+
+- **Sequence links** (`parent:` in front-matter): the card this one follows from or forms part of.
+  One parent per card, so a board is a set of trees, drawn as solid curves. **T** branches a new
+  thought from the selection, **⇧T** continues its sequence, **⇧C** then a click makes that card
+  follow from the selection. **A** tidies the selection's tree (or every tree) into columns.
+- **References** (connections in `board.json`): "this relates to that", drawn dashed and quiet
+  until you focus a card. **C** then a click. Right-click converts between the two.
+
+Deleting a card moves its children up to its parent. Older boards' `thought-of` / `moment-of`
+keys load as `parent`.
+
 ## Browser
 
 Press **B** (or the globe button) for a browser beside the canvas. Search the web or images

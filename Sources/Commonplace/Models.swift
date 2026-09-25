@@ -58,9 +58,12 @@ struct Card: Identifiable, Equatable {
     var media: String?
     /// The page this card was clipped from.
     var source: String?
-    /// For a thought sticky: the card it was drawn out of. A thought from a
-    /// video is a moment, and its timestamp seeks that video.
-    var thoughtOf: UUID?
+    /// The sequence link: the card this one follows from (Luhmann's
+    /// Folgezettel; the larger pattern it helps complete). One parent per card
+    /// gives the board a tree, which is what can be tidied and read in order.
+    /// Everything else is a reference (`Connection`). A child of a video is a
+    /// moment, and its timestamp seeks that video.
+    var parent: UUID?
     /// Playback speed for a video card.
     var speed: Double = 1
     /// Where playback was last, in seconds, so the video resumes there.

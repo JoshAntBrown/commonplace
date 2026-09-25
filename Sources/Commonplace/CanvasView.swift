@@ -356,9 +356,12 @@ struct CanvasView: View {
         case "n": store.add(.note, at: p, edit: true)
         case "l": store.showLinkPrompt = true
         case "i": store.pickImages()
-        case "c": store.startConnecting()
+        case "c":
+            if flags.contains(.shift) { store.startSequenceLink() } else { store.startConnecting() }
+        case "a": store.tidy()
         case "p": store.add(.place, at: p, edit: true)
-        case "t": store.addThought()
+        case "t":
+            if flags.contains(.shift) { store.continueSequence() } else { store.addThought() }
         case "[", "]":
             guard let id = store.selection.first, store.videoID(for: id) != nil else { return false }
             store.stepSpeed(id, up: key == "]")
@@ -425,6 +428,34 @@ enum Geometry {
         return (p1, p2)
     }
 
+    /// A smooth curve from a parent to a child, leaving the side that faces
+    /// the child. Returns the path and where it meets the child.
+    static func sequencePath(from parent: CGRect, to child: CGRect, scale: CGFloat) -> (Path, CGPoint) {
+        let inset = 22 * scale
+        var path = Path()
+        let start: CGPoint, end: CGPoint, c1: CGPoint, c2: CGPoint
+        if child.minX >= parent.maxX - 4 || child.maxX <= parent.minX + 4 {
+            // Side by side: out of the parent's side, into the child's facing side.
+            let right = child.minX >= parent.maxX - 4
+            start = CGPoint(x: right ? parent.maxX : parent.minX, y: parent.minY + min(parent.height / 2, inset))
+            end = CGPoint(x: right ? child.minX : child.maxX, y: child.minY + min(child.height / 2, inset))
+            let mid = (end.x - start.x) / 2
+            c1 = CGPoint(x: start.x + mid, y: start.y)
+            c2 = CGPoint(x: end.x - mid, y: end.y)
+        } else {
+            // Stacked: out of the bottom (or top), into the child's facing edge.
+            let below = child.midY >= parent.midY
+            start = CGPoint(x: parent.midX, y: below ? parent.maxY : parent.minY)
+            end = CGPoint(x: child.midX, y: below ? child.minY : child.maxY)
+            let mid = (end.y - start.y) / 2
+            c1 = CGPoint(x: start.x, y: start.y + mid)
+            c2 = CGPoint(x: end.x, y: end.y - mid)
+        }
+        path.move(to: start)
+        path.addCurve(to: end, control1: c1, control2: c2)
+        return (path, end)
+    }
+
     static func arrowhead(at tip: CGPoint, from: CGPoint, size: CGFloat) -> Path {
         let angle = atan2(tip.y - from.y, tip.x - from.x)
         var path = Path()
@@ -445,18 +476,35 @@ struct ConnectionsLayer: View {
         Canvas { ctx, _ in
             let chrome = min(store.scale, 1)
             let focus = store.focusedCards
+
+            // Sequence links: the tree that gives the board its order. Solid
+            // and always shown, strongest for what you're focused on.
+            for card in store.board.cards {
+                guard let parentID = card.parent, let parent = store.card(parentID) else { continue }
+                let related = focus.contains(card.id) || focus.contains(parentID)
+                let (path, end) = Geometry.sequencePath(from: store.toScreen(parent.frame),
+                                                        to: store.toScreen(card.frame), scale: store.scale)
+                let color: SwiftUI.Color = related ? theme.accent : theme.muted.opacity(0.7)
+                ctx.stroke(path, with: .color(color),
+                           style: StrokeStyle(lineWidth: max(1, (related ? 2.2 : 1.6) * chrome), lineCap: .round))
+                let r = max(2, 3 * chrome)
+                ctx.fill(Path(ellipseIn: CGRect(x: end.x - r, y: end.y - r, width: r * 2, height: r * 2)), with: .color(color))
+            }
+
+            // References: the web across the tree. Dashed and quiet until focused.
             for c in store.board.connections {
                 guard let (p1, p2) = store.endpoints(c) else { continue }
                 // Focus and context: the focused cards' connections come forward,
                 // the rest recede; with no focus, all lines stay quiet.
                 let related = focus.contains(c.from) || focus.contains(c.to) || store.selectedConnection == c.id
                 let color: SwiftUI.Color = related ? theme.accent
-                    : theme.muted.opacity(focus.isEmpty ? 0.55 : 0.18)
-                let width = max(1, (related ? 2 : 1.4) * chrome)
+                    : theme.muted.opacity(focus.isEmpty ? 0.4 : 0.15)
+                let width = max(1, (related ? 1.8 : 1.2) * chrome)
                 var path = Path()
                 path.move(to: p1)
                 path.addLine(to: p2)
-                ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round))
+                let dash = [max(3, 6 * chrome), max(2, 4 * chrome)]
+                ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash))
                 ctx.fill(Geometry.arrowhead(at: p2, from: p1, size: max(6, 10 * chrome)), with: .color(color))
             }
             if let from = store.connectingFrom, let a = store.card(from), let h = store.hover {
@@ -465,7 +513,9 @@ struct ConnectionsLayer: View {
                 var path = Path()
                 path.move(to: start)
                 path.addLine(to: h)
-                ctx.stroke(path, with: .color(theme.accent), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                ctx.stroke(path, with: .color(theme.accent),
+                           style: StrokeStyle(lineWidth: store.connectingSequence ? 2 : 1.5,
+                                              dash: store.connectingSequence ? [] : [5, 4]))
             }
         }
     }
@@ -532,7 +582,19 @@ struct ConnectionHandle: View {
                 store.editing = nil
                 store.selectedConnection = connection.id
             }
-            .help("Click to select · double-click to label")
+            .help("Reference · click to select · double-click to label")
+            .contextMenu {
+                Button("Make Sequence Link") { store.makeSequence(connection.id) }
+                Button("Label…") {
+                    store.selectedConnection = connection.id
+                    store.editingConnection = connection.id
+                }
+                Divider()
+                Button("Delete Reference", role: .destructive) {
+                    store.selectedConnection = connection.id
+                    store.deleteSelection()
+                }
+            }
             .position(x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2)
             }
         }
@@ -553,7 +615,9 @@ struct StatusBar: View {
         HStack(spacing: 12) {
             Text("\(Int((store.scale * 100).rounded()))%")
             if store.connectingFrom != nil {
-                Text("Connecting — click a card · Esc to cancel").foregroundStyle(theme.accent)
+                Text(store.connectingSequence ? "Sequence — click the card that follows from this · Esc to cancel"
+                                              : "Reference — click a card · Esc to cancel")
+                    .foregroundStyle(theme.accent)
             } else {
                 Text("\(store.board.cards.count) cards")
             }
@@ -573,9 +637,10 @@ struct HelpOverlay: View {
     private let rows: [(String, String)] = [
         ("S", "New sticky"), ("N", "New note"), ("L", "Add link or video"), ("I", "Add image"),
         ("⌘V", "Paste URL, image or text"), ("Double-click", "Sticky on canvas / edit card"),
-        ("C", "Connect selection → click target"), ("P", "New breadboard place"),
+        ("C · ⇧C", "Reference → click target · sequence link → click what follows"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
-        ("Affordance dot", "Connect that affordance → click a place"), ("T", "Thought from the selection (a moment on videos)"),
+        ("Affordance dot", "Connect that affordance → click a place"), ("T · ⇧T", "Branch a thought from the selection · continue its sequence"),
+        ("A", "Tidy the selection's tree (or every tree)"),
         ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Drag · ⇧-drag", "Select a box of cards · add to selection"),

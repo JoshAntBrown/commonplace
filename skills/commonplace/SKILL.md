@@ -16,16 +16,31 @@ Card kinds:
 - **place**: a Shape Up breadboard place. `title` is the place, each `body` line an affordance.
   Connections can start from one affordance (`from_affordance`).
 
-A **thought** is a sticky drawn out of another card (`thought_of`). A thought on a video is a
-**moment**: its body starts with a timestamp like `[12:34]` that seeks the video when clicked.
+There are two kinds of link, and the difference matters (it comes from Luhmann's Zettelkasten and
+Alexander's pattern languages):
+
+- **Sequence link: `parent`.** The card this one follows from, elaborates or forms part of. Each
+  card has at most one parent, so a board is a set of trees. The trees give a board its order:
+  they're drawn as solid lines, tidied into columns and read in sequence. Set with `parent` on
+  `add_card`, `add_thought`, or `set_parent`.
+- **Reference: a connection.** "This relates to that", between any two cards, anywhere. Drawn as
+  quiet dashed lines that come forward when the user focuses a card. Made with `connect`.
+
+Use a parent when a card grows out of another (a point from a talk, a consequence, a sub-part, the
+next step). Use a reference for everything else (supports, contradicts, example of, same idea as).
+When in doubt, a card has one natural parent and any number of references.
+
+A **thought** is a sticky that follows from another card (`add_thought`). A thought on a video is
+a **moment**: its body starts with a timestamp like `[12:34]` that seeks the video when clicked.
 
 ## Working on a board
 
 1. **Look before you act.** Call `get_selection` first: what the user has selected is almost
    always what they mean by "this". Use `get_board` or `search` for the wider context.
 2. **Add, don't rewrite.** Put your contribution in new cards:
-   - Respond to a card with `add_thought`, which places and connects a sticky beside it.
-   - Use `add_card` with `near` and `connect_from` for anything else related.
+   - Respond to a card with `add_thought`, which places a sticky that follows from it.
+   - Use `add_card` with `parent` when a card elaborates another, or `near` plus `connect` for a
+     looser relationship.
    - When you do change a card, prefer `update_card` with `append` over replacing the text.
 3. **Keep the user's words.** Don't reword, merge or delete their cards unless they ask.
    `delete_card` is only for explicit requests.
@@ -42,11 +57,11 @@ Everything you do is undoable in the app with ⌘Z. Say so if you've made a larg
 A board is read visually. A pile of cards joined by long crossing lines is noise, however good
 each card is.
 
-- **Cluster, don't scatter.** Put each new card `near` the card it grows out of, so related ideas
-  sit together. When you add several cards on one theme, chain them: each one `near` the last.
-- **Connect sparingly.** Draw only the strongest relationships, usually one or two per card. If a
-  card relates to something far away on the board, place it near that thing rather than drawing a
-  long line across the board.
+- **Build trees, not scatter.** Give each new card the `parent` it grows out of, so related ideas
+  form a branch. Several points from one source are siblings under it. After adding a batch, call
+  `tidy` on it so the branch is laid out cleanly.
+- **Reference sparingly.** Draw only the strongest cross-links, usually one or two per card. If a
+  card mostly belongs somewhere else, give it that parent instead of a long line across the board.
 - **Short labels.** One to three words ("supports", "example of", "tension"), or none when the
   relationship is obvious.
 - **Fewer, better cards.** Several points on one idea belong in one note with a list, not five
@@ -57,8 +72,7 @@ each card is.
 ## Recipes
 
 - **Summarise a talk from its moments:** `get_video_moments` on the video, then write one note
-  near it (`add_card` kind `note`, `near` the video, `connect_from` the video) that pulls the
-  moments together, citing timestamps like `[12:34]`.
+  with the video as its `parent` that pulls the moments together, citing timestamps like `[12:34]`.
 - **Find related ideas:** `search` across all boards for the key terms, then `connect` genuinely
   related cards on the same board, with a label. Mention relevant cards on other boards in your
   reply rather than copying them over.
