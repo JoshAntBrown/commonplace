@@ -323,6 +323,20 @@ struct CardView: View {
                 }
             }
             .clipped()
+            .overlay(alignment: .topTrailing) {
+                if isSelected, let source = card.source.flatMap(URL.init(string:)), let host = source.host {
+                    Button { NSWorkspace.shared.open(source) } label: {
+                        Label(host, systemImage: "arrow.up.right")
+                            .font(.system(size: 11 * s))
+                            .padding(.horizontal, 7 * s)
+                            .padding(.vertical, 3 * s)
+                            .background(.ultraThinMaterial, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8 * s)
+                    .help(source.absoluteString)
+                }
+            }
             .overlay(alignment: .bottomLeading) {
                 if isEditing {
                     TextField("Caption", text: titleBinding)

@@ -56,6 +56,8 @@ struct Card: Identifiable, Equatable {
     var summary: String?
     /// Direct video file behind a post (e.g. the MP4 in an X post).
     var media: String?
+    /// The page this card was clipped from.
+    var source: String?
     var created = Date()
     /// The markdown file this card was loaded from, if any.
     var file: String?

@@ -135,6 +135,7 @@ enum CardFile {
         if let image = card.image { lines.append("image: \(quote(image))") }
         if let summary = card.summary, !summary.isEmpty { lines.append("summary: \(quote(summary))") }
         if let media = card.media { lines.append("media: \(quote(media))") }
+        if let source = card.source { lines.append("source: \(quote(source))") }
         lines.append("created: \(dates.string(from: card.created))")
         lines.append("---")
         lines.append("")
@@ -169,6 +170,7 @@ enum CardFile {
         card.image = fields["image"]
         card.summary = fields["summary"]
         card.media = fields["media"]
+        card.source = fields["source"]
         card.created = fields["created"].flatMap(dates.date(from:)) ?? Date()
         card.body = body
         card.file = fileName

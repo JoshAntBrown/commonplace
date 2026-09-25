@@ -11,6 +11,7 @@ struct CanvasView: View {
     @GestureState private var panning = false
     @State private var monitors: [Any] = []
     @State private var linkText = ""
+    @AppStorage("showBrowser") private var showBrowser = false
 
     var body: some View {
         GeometryReader { geo in
@@ -96,6 +97,9 @@ struct CanvasView: View {
                 Button { store.startConnecting() } label: {
                     Label("Connect", systemImage: "arrow.triangle.branch")
                 }.help("Connect selected card (C)").disabled(store.selection.isEmpty)
+                Button { showBrowser.toggle() } label: {
+                    Label("Browser", systemImage: "globe")
+                }.help("Find things on the web (B)")
                 Button { store.zoomToFit() } label: {
                     Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right")
                 }.help("Zoom to fit (F)")
@@ -136,9 +140,36 @@ struct CanvasView: View {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     if let url { DispatchQueue.main.async { store.addFile(url, at: p) } }
                 }
+            } else if let type = provider.registeredTypeIdentifiers.first(where: {
+                UTType($0)?.conforms(to: .image) == true
+            }) {
+                // Images dragged out of the browser carry their pixels, and
+                // usually their address too.
+                let page = ClipWebView.recentPage()
+                let hasURL = provider.canLoadObject(ofClass: URL.self)
+                _ = provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
+                    guard let data, NSImage(data: data) != nil else { return }
+                    let ext = UTType(type)?.preferredFilenameExtension ?? "png"
+                    DispatchQueue.main.async {
+                        guard let id = store.addImageData(data, ext: ext, at: p) else { return }
+                        let record = { (image: URL?) in
+                            guard let source = ClipWebView.source(page: page, image: image) else { return }
+                            store.update(id) {
+                                $0.source = source.absoluteString
+                                if let image { $0.url = image.absoluteString }
+                            }
+                        }
+                        guard hasURL else { record(nil); return }
+                        _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                            DispatchQueue.main.async { record(url.map(ClipWebView.unwrap)) }
+                        }
+                    }
+                }
             } else if provider.canLoadObject(ofClass: URL.self) {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    if let url { DispatchQueue.main.async { store.addURL(url.absoluteString, at: p) } }
+                    if let url {
+                        DispatchQueue.main.async { store.addURL(ClipWebView.unwrap(url).absoluteString, at: p) }
+                    }
                 }
             } else if provider.canLoadObject(ofClass: NSImage.self) {
                 _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
@@ -208,6 +239,12 @@ struct CanvasView: View {
     private static func handleKey(_ event: NSEvent, store: BoardStore) -> Bool {
         guard let window = event.window, window.attachedSheet == nil else { return false }
         let inText = window.firstResponder is NSText
+        // Typing into a web page (browser or video) belongs to the page.
+        var responder = window.firstResponder as? NSView
+        while let v = responder {
+            if v is WKWebView { return false }
+            responder = v.superview
+        }
         let flags = event.modifierFlags
 
         if event.keyCode == 53 { // Esc
@@ -255,6 +292,9 @@ struct CanvasView: View {
         case "t":
             guard let id = store.selection.first, store.card(id)?.kind == .video else { return false }
             store.addTimestamp(id)
+        case "b":
+            let defaults = UserDefaults.standard
+            defaults.set(!defaults.bool(forKey: "showBrowser"), forKey: "showBrowser")
         case "f": store.zoomToFit()
         case "0": store.resetZoom()
         case "=", "+": store.zoom(by: 1.25)
@@ -449,6 +489,7 @@ struct HelpOverlay: View {
         ("S", "New sticky"), ("N", "New note"), ("L", "Add link or video"), ("I", "Add image"),
         ("⌘V", "Paste URL, image or text"), ("Double-click", "Sticky on canvas / edit card"),
         ("C", "Connect selection → click target"), ("P", "New breadboard place"),
+        ("B", "Browser: search, drag or right-click to add"),
         ("Affordance dot", "Connect that affordance → click a place"), ("T", "Note current moment on a video"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Delete", "Remove selection"), ("Scroll · ⌘-scroll", "Pan · zoom"),

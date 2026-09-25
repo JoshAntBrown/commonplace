@@ -38,6 +38,7 @@ final class BoardStore {
     @ObservationIgnored private var videos: [UUID: VideoController] = [:]
     @ObservationIgnored private var terminateObserver: Any?
     @ObservationIgnored private var isClosed = false
+    @ObservationIgnored private var clipCount = 0
 
     init(library: Library, name: String) {
         self.library = library
@@ -202,22 +203,87 @@ final class BoardStore {
         addImageData(data, ext: ext, title: file.deletingPathExtension().lastPathComponent, at: point)
     }
 
-    func addImageData(_ data: Data, ext: String, title: String = "", at point: CGPoint) {
+    @discardableResult
+    func addImageData(_ data: Data, ext: String, title: String = "", at point: CGPoint) -> UUID? {
+        var data = data
+        var ext = ext.lowercased()
+        // WebKit drags arrive as TIFF; store something smaller.
+        if ext == "tiff" || ext == "tif", let rep = NSBitmapImageRep(data: data),
+           let png = rep.representation(using: .png, properties: [:]) {
+            data = png
+            ext = "png"
+        }
         let assets = board.folder.appendingPathComponent("assets", isDirectory: true)
         try? FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
         let name = UUID().uuidString.lowercased() + "." + ext
-        guard (try? data.write(to: assets.appendingPathComponent(name))) != nil else { return }
+        guard (try? data.write(to: assets.appendingPathComponent(name))) != nil else { return nil }
 
         var size = CardKind.image.defaultSize
         if let img = NSImage(data: data), img.size.width > 0 {
             let w = min(420, max(160, img.size.width))
             size = CGSize(width: w, height: w * img.size.height / img.size.width)
         }
-        add(.image, at: point) {
+        return add(.image, at: point) {
             $0.image = "assets/\(name)"
             $0.title = title
             $0.frame = CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2,
                               width: size.width, height: size.height)
+        }
+    }
+
+    // MARK: Clipping from the browser
+
+    func addClip(_ clip: BrowserClip) {
+        let p = nextClipPoint()
+        switch clip {
+        case .page(let url, _), .link(let url):
+            addURL(url.absoluteString, at: p)
+        case .image(let url, let page, let title):
+            addRemoteImage(url, page: page, title: title, at: p)
+        case .quote(let text, let page, let title):
+            let quoted = text.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .map { "> " + $0 }
+                .joined(separator: "\n")
+            var body = quoted
+            if let page {
+                let name = title.isEmpty ? (page.host ?? page.absoluteString) : title
+                body += "\n\n— [\(name.replacingOccurrences(of: "]", with: ")"))](\(page.absoluteString))"
+            }
+            add(.note, at: p) {
+                $0.body = body
+                $0.source = page?.absoluteString
+            }
+        }
+    }
+
+    /// Clips land in the middle of the view, fanned out so they don't stack.
+    private func nextClipPoint() -> CGPoint {
+        let c = toWorld(CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2))
+        defer { clipCount += 1 }
+        let step = CGFloat(clipCount % 6) * 28 / scale
+        return CGPoint(x: c.x + step, y: c.y + step)
+    }
+
+    func addRemoteImage(_ url: URL, page: URL?, title: String, at point: CGPoint) {
+        Task { @MainActor in
+            var request = URLRequest(url: url, timeoutInterval: 20)
+            request.setValue(safariUserAgent, forHTTPHeaderField: "User-Agent")
+            if let page { request.setValue(page.absoluteString, forHTTPHeaderField: "Referer") }
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  NSImage(data: data) != nil else {
+                // Hotlink-protected or not really an image: keep a link instead.
+                self.addURL(url.absoluteString, at: point)
+                return
+            }
+            let ext = response.mimeType.flatMap { UTType(mimeType: $0)?.preferredFilenameExtension }
+                ?? (url.pathExtension.isEmpty ? "png" : url.pathExtension)
+            guard let id = self.addImageData(data, ext: ext, title: title, at: point) else { return }
+            self.update(id) {
+                $0.url = url.absoluteString
+                $0.source = ClipWebView.source(page: page, image: url)?.absoluteString
+            }
         }
     }
 
@@ -320,6 +386,10 @@ final class BoardStore {
     }
 
     private func beginDrag(_ id: UUID, shift: Bool) {
+        // Take keyboard focus back from the browser so canvas shortcuts work.
+        if let window = NSApp.keyWindow, !(window.firstResponder is NSText) {
+            window.makeFirstResponder(nil)
+        }
         if let from = connectingFrom {
             connect(from, id, item: connectingItem)
             connectingFrom = nil

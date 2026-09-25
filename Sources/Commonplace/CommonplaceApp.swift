@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct CommonplaceApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var library = Library()
+    @State private var browser = BrowserModel()
     @AppStorage("theme") private var themeID = Theme.all[0].id
     @AppStorage("board") private var boardName = ""
 
@@ -21,7 +22,7 @@ struct CommonplaceApp: App {
 
     var body: some Scene {
         Window("Commonplace", id: "main") {
-            ContentView(library: library)
+            ContentView(library: library, browser: browser)
                 .environment(\.theme, theme)
                 .preferredColorScheme(theme.isDark ? .dark : .light)
                 .frame(minWidth: 800, minHeight: 500)
@@ -51,6 +52,8 @@ struct CommonplaceApp: App {
 
 struct ContentView: View {
     let library: Library
+    let browser: BrowserModel
+    @AppStorage("showBrowser") private var showBrowser = false
     @AppStorage("board") private var boardName = ""
     @State private var store: BoardStore?
     @State private var renameTarget: String?
@@ -88,10 +91,17 @@ struct ContentView: View {
                 }
             }
         } detail: {
-            if let store {
-                CanvasView(store: store).id(ObjectIdentifier(store))
-            } else {
-                theme.background
+            HSplitView {
+                if let store {
+                    CanvasView(store: store).id(ObjectIdentifier(store))
+                        .frame(minWidth: 360)
+                } else {
+                    theme.background
+                }
+                if showBrowser {
+                    BrowserPanel(model: browser)
+                        .frame(minWidth: 340, idealWidth: 480, maxWidth: 1000)
+                }
             }
         }
         .onAppear(perform: open)
@@ -115,7 +125,9 @@ struct ContentView: View {
         }
         guard store?.board.name != boardName else { return }
         store?.close()
-        store = BoardStore(library: library, name: boardName)
+        let next = BoardStore(library: library, name: boardName)
+        store = next
+        browser.onClip = { [weak next] clip in next?.addClip(clip) }
     }
 
     private func commitRename() {

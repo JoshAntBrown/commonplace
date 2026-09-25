@@ -22,6 +22,13 @@ Everything lives in `~/Commonplace/<Board>/`:
 
 Markdown files dropped into `cards/` by hand appear on the board on next open.
 
+## Browser
+
+Press **B** (or the globe button) for a browser beside the canvas. Search the web or images
+(DuckDuckGo), then drag images, links or videos onto the board, or right-click for
+**Add Image / Link / Selection / Page to Board**. Clipped images are saved into `assets/` and
+remember their `source`; selected text becomes a quote note linking back to its page.
+
 ## Breadboards
 
 Press **P** for a place card (Shape Up breadboarding): an underlined name, then one affordance per
