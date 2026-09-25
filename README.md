@@ -1,16 +1,31 @@
 # Commonplace
 
-A native macOS canvas for collecting references, snippets and notes — stickies, markdown notes,
-links, images and videos — and connecting them into a map of ideas.
+A canvas for thinking, for macOS. Collect references (YouTube and X videos, links, images, quotes
+clipped from the web), jot stickies and notes, sketch Shape Up breadboards, and connect it all into
+a map of ideas you can explore.
 
-## Run
+Keyboard-first and themeable, in the spirit of [Omarchy](https://omarchy.org). Everything is stored
+as plain Markdown files you own. Agents like Claude Code can work on your boards alongside you
+through a built-in MCP server.
+
+Inspired by commonplace books, Niklas Luhmann's Zettelkasten, Christopher Alexander's pattern
+languages and Ryan Singer's Shape Up, without being a tool for any one of them.
+
+## Requirements
+
+- macOS 14 or later
+- Xcode 16 or later (or the Swift 6 toolchain), to build
+
+## Build and run
 
 ```sh
+git clone https://github.com/JoshAntBrown/commonplace.git
+cd commonplace
 scripts/run.sh            # debug build → build/Commonplace.app, then launch
 scripts/build-app.sh      # release build
 ```
 
-Open `Package.swift` in Xcode to work on it there.
+Open `Package.swift` in Xcode to work on it there. Press **?** in the app for every shortcut.
 
 ## Data
 
@@ -92,3 +107,11 @@ add_thought, update_card, add_reference, set_thread, tidy_thread, clip_url, dele
 focus_card.
 
 Files edited outside the app (another editor, a script) are picked up and reloaded.
+
+## Ideas
+
+Parked ideas live in [docs/ideas.md](docs/ideas.md).
+
+## License
+
+[MIT](LICENSE)
