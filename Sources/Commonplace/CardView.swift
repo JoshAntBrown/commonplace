@@ -10,7 +10,6 @@ struct CardView: View {
     @Environment(\.theme) private var theme
     @GestureState private var dragging = false
     @GestureState private var resizing = false
-    @State private var showReferences = false
 
     /// Content (text, images, video) scales with zoom.
     private var s: CGFloat { store.scale }
@@ -129,13 +128,19 @@ struct CardView: View {
     }
 
     /// References travel with the card rather than as lines across the board:
-    /// a small count hanging off the card's bottom edge (clear of its text)
-    /// that opens the list. Hidden when zoomed out unless the card is selected.
+    /// a small count hanging off the card's bottom edge (clear of its text).
+    /// Hidden when zoomed out unless the card is selected.
     @ViewBuilder private var referenceChip: some View {
         let refs = store.references(of: card.id)
         if !refs.isEmpty, !overview || isSelected {
             let k = overview ? 1 : max(c, 0.8)  // small, but always legible and clickable
-            Button { showReferences.toggle() } label: {
+            // Selecting the card brings up its floating references, which move
+            // with the board (a popover would linger on screen as it glides).
+            Button {
+                store.selection = [card.id]
+                store.selectedConnection = nil
+                store.editing = nil
+            } label: {
                 HStack(spacing: 3 * k) {
                     Image(systemName: "arrow.left.arrow.right")
                         .font(.system(size: 7.5 * k, weight: .bold))
@@ -151,45 +156,9 @@ struct CardView: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .help("\(refs.count) reference\(refs.count == 1 ? "" : "s")")
-            .popover(isPresented: $showReferences, arrowEdge: .bottom) { referenceList(refs) }
+            .help("\(refs.count) reference\(refs.count == 1 ? "" : "s"): select to see them")
             .offset(x: 12 * k, y: 8 * k)
         }
-    }
-
-    private func referenceList(_ refs: [BoardStore.Reference]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(refs) { ref in
-                Button {
-                    showReferences = false
-                    store.reveal(ref.other, animated: true)
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 9) {
-                        Image(systemName: ref.outgoing ? "arrow.right" : "arrow.left")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(theme.accent)
-                            .frame(width: 12)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(store.card(ref.other)?.headline ?? "Card")
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(theme.text)
-                                .lineLimit(2)
-                            if !ref.label.isEmpty {
-                                Text(ref.label).font(.system(size: 11)).foregroundStyle(theme.muted)
-                            }
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.vertical, 4)
-        .frame(width: 300)
-        .background(theme.surface)
     }
 
     private var openButton: some View {

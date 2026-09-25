@@ -796,7 +796,8 @@ struct ReferenceHalo: View {
                         .position(x: layout.moreFrame.midX, y: layout.moreFrame.midY)
                 }
             }
-            .transition(.opacity)
+            // Fade in on arrival; vanish at once when leaving, so nothing is left behind.
+            .transition(.asymmetric(insertion: .opacity, removal: .identity))
         }
     }
 
