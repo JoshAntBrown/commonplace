@@ -82,7 +82,8 @@ struct ContentView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(theme.surface)
+            // The sidebar panel runs up behind the traffic lights; fill all of it.
+            .background { theme.surface.ignoresSafeArea() }
             .navigationSplitViewColumnWidth(min: 170, ideal: 210)
             .toolbar {
                 ToolbarItem {
