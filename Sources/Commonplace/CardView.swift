@@ -63,6 +63,9 @@ struct CardView: View {
                 Button("Add Thought") { store.selection = [card.id]; store.addThought() }
                 Button("Choose What Follows This…") { store.selection = [card.id]; store.startThreadLink() }
                 Button("Tidy Thread") { store.tidy([card.id]) }
+                Divider()
+                Button("Copy") { selectForMenu(); store.copySelection() }
+                Button("Duplicate") { selectForMenu(); store.duplicateSelection() }
                 if card.parent != nil {
                     Divider()
                     Button("Turn Thread into Reference") { store.makeReference(card.id) }
@@ -162,6 +165,11 @@ struct CardView: View {
             .help("\(refs.count) reference\(refs.count == 1 ? "" : "s"): select to see them")
             .offset(x: 12 * k, y: 8 * k)
         }
+    }
+
+    /// Right-clicking a card outside the selection acts on that card alone.
+    private func selectForMenu() {
+        if !store.selection.contains(card.id) { store.selection = [card.id] }
     }
 
     private var openButton: some View {
@@ -381,21 +389,18 @@ struct CardView: View {
     private var video: some View {
         VStack(alignment: .leading, spacing: 0) {
             header {
-                Menu {
+                // A plain button styled like its neighbours (a Menu ignores the
+                // header's font and wouldn't scale with zoom).
+                Button { store.stepSpeed(card.id, up: true) } label: {
+                    Text(Self.speedLabel(card.speed)).monospacedDigit()
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
                     ForEach(Card.speeds, id: \.self) { speed in
                         Button(Self.speedLabel(speed)) { store.setSpeed(card.id, speed) }
                     }
-                } label: {
-                    Text(Self.speedLabel(card.speed))
-                        .font(.system(size: 11.5 * c, weight: .semibold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(card.speed == 1 ? theme.muted : theme.accent)
-                } primaryAction: {
-                    store.stepSpeed(card.id, up: true)
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Playback speed: click to speed up, hold for all speeds ([ and ])")
+                .help("Playback speed: click to speed up, right-click for all speeds ([ and ])")
                 Button { store.addThoughtAtCurrentTime(card.id) } label: {
                     HStack(spacing: 3 * c) {
                         Image(systemName: "plus")

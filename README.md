@@ -22,6 +22,12 @@ Everything lives in `~/Commonplace/<Board>/`:
 
 Markdown files dropped into `cards/` by hand appear on the board on next open.
 
+## Copy and paste
+
+**⌘C** copies the selected cards (with their layout, and the threads and references among them),
+**⌘V** pastes them under the pointer on any board, **⌘X** cuts, **⌘D** duplicates. Images come with
+them between boards, and other apps receive the cards' Markdown.
+
 ## Vocabulary
 
 - **Card**: anything on a board (sticky, note, link, video, image, place).

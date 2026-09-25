@@ -356,9 +356,109 @@ final class BoardStore {
         }
     }
 
+    // MARK: Copy and paste
+
+    static let cardsPasteboardType = NSPasteboard.PasteboardType("com.joossh.commonplace.cards")
+
+    /// Cards on the clipboard: each as its Markdown file plus its frame, the
+    /// links among them, and the board they came from (for image files).
+    private struct Clip: Codable {
+        struct Item: Codable {
+            var id: UUID
+            var markdown: String
+            var x, y, w, h: Double
+        }
+        var folder: String
+        var cards: [Item]
+        var connections: [Connection]
+    }
+
+    private func clip(of ids: Set<UUID>) -> Clip? {
+        let cards = board.cards.filter { ids.contains($0.id) }
+        guard !cards.isEmpty else { return nil }
+        return Clip(folder: board.folder.path,
+                    cards: cards.map { .init(id: $0.id, markdown: CardFile.encode($0), x: $0.frame.minX,
+                                             y: $0.frame.minY, w: $0.frame.width, h: $0.frame.height) },
+                    connections: board.connections.filter { ids.contains($0.from) && ids.contains($0.to) })
+    }
+
+    /// ⌘C: the selection, for pasting on any board, plus its text as Markdown
+    /// for other apps.
+    func copySelection() {
+        guard let clip = clip(of: selection), let data = try? JSONEncoder().encode(clip) else { return }
+        let text = board.cards.filter { selection.contains($0.id) }.map { card -> String in
+            var parts: [String] = []
+            if !card.title.isEmpty { parts.append("## " + card.title) }
+            if !card.body.isEmpty { parts.append(card.body) }
+            if let url = card.url { parts.append(url) }
+            return parts.joined(separator: "\n\n")
+        }.joined(separator: "\n\n---\n\n")
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setData(data, forType: Self.cardsPasteboardType)
+        pb.setString(text, forType: .string)
+    }
+
+    func cutSelection() {
+        copySelection()
+        deleteCards(selection)
+    }
+
+    /// ⌘D: a copy of the selection just beside it.
+    func duplicateSelection() {
+        guard let clip = clip(of: selection) else { return }
+        let box = clip.cards.map { CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h) }.reduce(CGRect.null) { $0.union($1) }
+        paste(clip, at: CGPoint(x: box.midX + 30, y: box.midY + 30))
+    }
+
+    /// New cards from a clip, keeping the group's shape, centred on `point`.
+    /// Threads and references inside the group are kept; links to cards
+    /// outside it are dropped, so the copies stand on their own.
+    private func paste(_ clip: Clip, at point: CGPoint) {
+        checkpoint()
+        let ids = Dictionary(uniqueKeysWithValues: clip.cards.map { ($0.id, UUID()) })
+        let box = clip.cards.map { CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h) }.reduce(CGRect.null) { $0.union($1) }
+        let dx = point.x - box.midX, dy = point.y - box.midY
+        let sourceFolder = URL(fileURLWithPath: clip.folder, isDirectory: true)
+        for item in clip.cards {
+            var card = CardFile.decode(item.markdown, fileName: "clip.md")
+            card.id = ids[item.id]!
+            card.file = nil
+            card.created = Date()
+            card.frame = CGRect(x: item.x + dx, y: item.y + dy, width: item.w, height: item.h)
+            card.parent = card.parent.flatMap { ids[$0] }
+            // Images from another board bring their file along.
+            if let image = card.image, !image.hasPrefix("http"), sourceFolder.standardizedFileURL != board.folder.standardizedFileURL {
+                let assets = board.folder.appendingPathComponent("assets", isDirectory: true)
+                try? FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+                let name = UUID().uuidString.lowercased() + "." + (image as NSString).pathExtension
+                if (try? FileManager.default.copyItem(at: sourceFolder.appendingPathComponent(image),
+                                                      to: assets.appendingPathComponent(name))) != nil {
+                    card.image = "assets/\(name)"
+                }
+            }
+            fitHeight(&card)
+            board.cards.append(card)
+            dirty.insert(card.id)
+        }
+        for c in clip.connections {
+            guard let from = ids[c.from], let to = ids[c.to] else { continue }
+            board.connections.append(Connection(from: from, to: to, label: c.label, fromItem: c.fromItem))
+        }
+        selection = Set(ids.values)
+        selectedConnection = nil
+        editing = nil
+        scheduleSave()
+    }
+
     func paste() {
         let pb = NSPasteboard.general
         let p = insertionPoint
+        if let data = pb.data(forType: Self.cardsPasteboardType),
+           let clip = try? JSONDecoder().decode(Clip.self, from: data) {
+            paste(clip, at: p)
+            return
+        }
         if let urls = pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
            !urls.isEmpty {
             for (i, url) in urls.enumerated() {

@@ -328,6 +328,9 @@ struct CanvasView: View {
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "v": store.paste(); return true
             case "a": store.selectAll(); return true
+            case "c": store.copySelection(); return true
+            case "x": store.cutSelection(); return true
+            case "d": store.duplicateSelection(); return true
             case "z":
                 if flags.contains(.shift) { store.redo() } else { store.undo() }
                 return true
@@ -652,7 +655,7 @@ struct HelpOverlay: View {
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Drag · ⇧-drag", "Select a box of cards · add to selection"),
         ("Space-drag", "Pan the board"), ("⌘A", "Select all"),
-        ("Delete", "Remove selection"), ("⌘Z · ⇧⌘Z", "Undo · redo"), ("Scroll · ⌘-scroll", "Pan · zoom"),
+        ("Delete", "Remove selection"), ("⌘Z · ⇧⌘Z", "Undo · redo"), ("⌘C · ⌘X · ⌘V · ⌘D", "Copy · cut · paste · duplicate cards"), ("Scroll · ⌘-scroll", "Pan · zoom"),
         ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),
     ]
 
