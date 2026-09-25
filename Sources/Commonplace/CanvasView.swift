@@ -109,7 +109,7 @@ struct CanvasView: View {
                 }.help("New note (N)")
                 Button { store.showLinkPrompt = true } label: {
                     Label("Link", systemImage: CardKind.link.symbol)
-                }.help("Add link or video (L)")
+                }.help("Add link or video (U)")
                 Button { store.add(.place, at: store.insertionPoint, edit: true) } label: {
                     Label("Place", systemImage: CardKind.place.symbol)
                 }.help("New breadboard place (P)")
@@ -356,6 +356,10 @@ struct CanvasView: View {
         case 36, 76:
             if let id = store.selection.first { store.beginEditing(id) }
             return true
+        case 123: store.navigate(.left); return true
+        case 124: store.navigate(.right); return true
+        case 125: store.navigate(.down); return true
+        case 126: store.navigate(.up); return true
         default: break
         }
 
@@ -364,7 +368,11 @@ struct CanvasView: View {
         switch key {
         case "s": store.add(.sticky, at: p, edit: true)
         case "n": store.add(.note, at: p, edit: true)
-        case "l": store.showLinkPrompt = true
+        case "u": store.showLinkPrompt = true
+        case "h": store.navigate(.left)
+        case "j": store.navigate(.down)
+        case "k": store.navigate(.up)
+        case "l": store.navigate(.right)
         case "i": store.pickImages()
         case "c":
             if flags.contains(.shift) { store.startThreadLink() } else { store.startConnecting() }
@@ -649,7 +657,7 @@ struct HelpOverlay: View {
     @Environment(\.theme) private var theme
 
     private let rows: [(String, String)] = [
-        ("S", "New sticky"), ("N", "New note"), ("L", "Add link or video"), ("I", "Add image"),
+        ("S", "New sticky"), ("N", "New note"), ("U", "Add link or video (URL)"), ("I", "Add image"),
         ("⌘V", "Paste URL, image or text"), ("Double-click", "Sticky on canvas / edit card"),
         ("C · ⇧C", "Reference → click target · thread → click what follows"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
@@ -660,6 +668,7 @@ struct HelpOverlay: View {
         ("1–6 · 7", "Colour · clear colour"), ("Return · ⇧Return", "Edit or finish · new line"), ("Esc", "Finish editing"),
         ("Drag · ⇧-drag", "Select a box of cards · add to selection"),
         ("Space-drag", "Pan the board"), ("⌘A", "Select all"),
+        ("← → ↑ ↓ · h l k j", "Move: follows from · its thoughts · previous / next in thread"),
         ("Delete", "Remove selection"), ("⌘Z · ⇧⌘Z", "Undo · redo"), ("⌘C · ⌘X · ⌘V · ⌘D", "Copy · cut · paste · duplicate cards"), ("Scroll · ⌘-scroll", "Pan · zoom"),
         ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),
     ]

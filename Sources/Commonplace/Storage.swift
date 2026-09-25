@@ -247,7 +247,8 @@ enum Seed {
         keys.body = """
         # Shortcuts
         - **S** sticky · **N** note
-        - **L** link or video · **I** image
+        - **U** link or video · **I** image
+        - **Arrows / hjkl** move between cards
         - **⌘V** paste a URL, image or text
         - **C** connect, then click a card
         - **T** thought · **⇧T** continue

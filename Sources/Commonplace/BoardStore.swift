@@ -1003,6 +1003,75 @@ final class BoardStore {
         scheduleSave()
     }
 
+    // MARK: Keyboard navigation
+
+    enum Direction { case left, right, up, down }
+
+    /// Arrows and h/j/k/l follow threads first: left to what the card follows
+    /// from, right to its first thought, up/down through the thread's cards.
+    /// Where the thread ends, they move to the nearest card in that direction.
+    func navigate(_ direction: Direction) {
+        editing = nil
+        guard let id = selection.first, let current = card(id) else {
+            // Nothing selected: start from the card nearest the middle of the view.
+            let size = viewSize
+            let middle = toWorld(CGPoint(x: size.width / 2, y: size.height / 2))
+            if let nearest = board.cards.min(by: { distance($0.frame, middle) < distance($1.frame, middle) }) {
+                move(to: nearest.id)
+            }
+            return
+        }
+        var target: UUID?
+        switch direction {
+        case .left:
+            target = current.parent.flatMap { card($0)?.id }
+        case .right:
+            target = children(of: id).first?.id
+        case .up, .down:
+            if let parent = current.parent {
+                let siblings = children(of: parent)
+                if let i = siblings.firstIndex(where: { $0.id == id }) {
+                    let j = direction == .up ? i - 1 : i + 1
+                    if siblings.indices.contains(j) { target = siblings[j].id }
+                }
+            }
+        }
+        guard let next = target ?? nearest(from: current, toward: direction) else { return NSSound.beep() }
+        move(to: next)
+    }
+
+    private func distance(_ r: CGRect, _ p: CGPoint) -> CGFloat {
+        hypot(r.midX - p.x, r.midY - p.y)
+    }
+
+    /// The closest card roughly in a direction, preferring ones straight ahead.
+    private func nearest(from card: Card, toward direction: Direction) -> UUID? {
+        let c = CGPoint(x: card.frame.midX, y: card.frame.midY)
+        return board.cards.filter { $0.id != card.id }.compactMap { other -> (UUID, CGFloat)? in
+            let dx = other.frame.midX - c.x, dy = other.frame.midY - c.y
+            let (ahead, across): (CGFloat, CGFloat) = switch direction {
+            case .left: (-dx, abs(dy))
+            case .right: (dx, abs(dy))
+            case .up: (-dy, abs(dx))
+            case .down: (dy, abs(dx))
+            }
+            guard ahead > 1, across <= ahead * 1.8 else { return nil }
+            return (other.id, ahead + across * 2)
+        }.min { $0.1 < $1.1 }?.0
+    }
+
+    /// Selects a card, gliding the view only if it isn't comfortably in view.
+    private func move(to id: UUID) {
+        guard let card = card(id) else { return }
+        selection = [id]
+        selectedConnection = nil
+        let view = CGRect(origin: .zero, size: viewSize).insetBy(dx: 40, dy: 40)
+        if !view.contains(toScreen(card.frame)) {
+            glide(to: CGPoint(x: viewSize.width / 2 - card.frame.midX * scale,
+                              y: viewSize.height / 2 - card.frame.midY * scale))
+        }
+    }
+
     /// Selects a card and centres the view on it.
     func reveal(_ id: UUID, animated: Bool = false) {
         guard let card = card(id) else { return }

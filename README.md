@@ -22,6 +22,12 @@ Everything lives in `~/Commonplace/<Board>/`:
 
 Markdown files dropped into `cards/` by hand appear on the board on next open.
 
+## Moving around
+
+Arrows (or **h j k l**) follow threads first: **←** to what the card follows from, **→** to its first
+thought, **↑ ↓** through the thread; where a thread ends they move to the nearest card that way.
+**U** adds a link or video by URL.
+
 ## Copy and paste
 
 **⌘C** copies the selected cards (with their layout, and the threads and references among them),
