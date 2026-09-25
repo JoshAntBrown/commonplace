@@ -898,6 +898,7 @@ final class BoardStore {
         selection = [id]
         selectedConnection = nil
         editing = nil
+        highlight = nil
         guard canvasSize != .zero else { pendingReveal = id; return }
         pendingReveal = nil
         let target = CGPoint(x: viewSize.width / 2 - card.frame.midX * scale,
@@ -912,6 +913,8 @@ final class BoardStore {
 
     /// A card briefly outlined after travelling to it.
     var flash: UUID?
+    /// A card outlined while its entry in the floating references is hovered.
+    var highlight: UUID?
 
     /// Pans smoothly by stepping the offset, so lines (drawn in a Canvas)
     /// move in step with the cards.

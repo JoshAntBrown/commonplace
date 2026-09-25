@@ -738,65 +738,90 @@ struct CanvasAnchor: NSViewRepresentable {
     }
 }
 
-/// Floating references: when one card is active, the cards it references (or
-/// that reference it) which are off screen float beside it as small
-/// previews. Choosing one travels there, and its own references float in.
+/// Floating references: when one card is active, all of its references (both
+/// ways) float beside it as a list, so the list is always the whole story.
+/// Entries for cards in view are marked, and hovering one outlines the real
+/// card; entries for cards out of view point toward them. Choosing one
+/// travels there, and its own references float in.
 struct ReferenceHalo: View {
     let store: BoardStore
     @Environment(\.theme) private var theme
 
-    private struct Proxy: Identifiable {
+    private struct Entry: Identifiable {
         let ref: BoardStore.Reference
         let card: Card
         let frame: CGRect
         let angle: Double
+        let inView: Bool
         var id: UUID { ref.id }
     }
 
-    private static let size = CGSize(width: 210, height: 54)
+    private struct Layout {
+        var entries: [Entry] = []
+        var more: Int = 0
+        var moreFrame: CGRect = .zero
+    }
+
+    private static let size = CGSize(width: 220, height: 50)
+    private static let gap: CGFloat = 6
 
     var body: some View {
-        let proxies = layout()
-        if !proxies.isEmpty, let id = store.selection.first, let active = store.card(id) {
+        let layout = self.layout()
+        if !layout.entries.isEmpty, let id = store.selection.first, let active = store.card(id) {
             let source = store.toScreen(active.frame)
             ZStack(alignment: .topLeading) {
+                // Out-of-view entries get a faint leader to the card; in-view
+                // ones already have the real line.
                 Canvas { ctx, _ in
-                    for p in proxies {
-                        let start = Geometry.edge(source.insetBy(dx: -4, dy: -4), toward: CGPoint(x: p.frame.midX, y: p.frame.midY))
-                        let end = Geometry.edge(p.frame.insetBy(dx: -3, dy: -3), toward: start)
+                    for e in layout.entries where !e.inView {
+                        let mid = CGPoint(x: e.frame.midX, y: e.frame.midY)
+                        let start = Geometry.edge(source.insetBy(dx: -4, dy: -4), toward: mid)
+                        let end = Geometry.edge(e.frame.insetBy(dx: -3, dy: -3), toward: start)
                         var path = Path()
                         path.move(to: start)
                         path.addLine(to: end)
-                        ctx.stroke(path, with: .color(theme.accent.opacity(0.6)),
-                                   style: StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [4, 4]))
+                        ctx.stroke(path, with: .color(theme.accent.opacity(0.4)),
+                                   style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [3, 4]))
                     }
                 }
                 .allowsHitTesting(false)
-                ForEach(proxies) { p in
-                    proxyCard(p)
-                        .frame(width: p.frame.width, height: p.frame.height)
-                        .position(x: p.frame.midX, y: p.frame.midY)
-                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                ForEach(layout.entries) { e in
+                    entry(e)
+                        .frame(width: e.frame.width, height: e.frame.height)
+                        .position(x: e.frame.midX, y: e.frame.midY)
+                }
+                if layout.more > 0 {
+                    moreButton(layout.more, active: id)
+                        .frame(width: layout.moreFrame.width, height: layout.moreFrame.height)
+                        .position(x: layout.moreFrame.midX, y: layout.moreFrame.midY)
                 }
             }
-            .animation(.easeOut(duration: 0.2), value: proxies.map(\.id))
+            .transition(.opacity)
         }
     }
 
-    private func proxyCard(_ p: Proxy) -> some View {
-        Button { store.reveal(p.ref.other, animated: true) } label: {
+    private func entry(_ e: Entry) -> some View {
+        Button { store.reveal(e.ref.other, animated: true) } label: {
             HStack(spacing: 9) {
-                // Points toward where the card really is.
-                Image(systemName: "location.north.fill")
-                    .font(.system(size: 11))
-                    .rotationEffect(.radians(p.angle + .pi / 2))
-                    .foregroundStyle(theme.accent)
+                // Where the card is: a dot when it's in view, otherwise an arrow toward it.
+                Group {
+                    if e.inView {
+                        Image(systemName: "eye").font(.system(size: 10))
+                    } else {
+                        Image(systemName: "location.north.fill").font(.system(size: 10))
+                            .rotationEffect(.radians(e.angle + .pi / 2))
+                    }
+                }
+                .foregroundStyle(theme.accent)
+                .frame(width: 14)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text((p.ref.outgoing ? "→ " : "← ") + (p.ref.label.isEmpty ? (p.ref.outgoing ? "refers to" : "referred to by") : p.ref.label))
+                    Text((e.ref.outgoing ? "→ " : "← ")
+                         + (e.ref.label.isEmpty ? (e.ref.outgoing ? "refers to" : "referred to by") : e.ref.label)
+                         + (e.inView ? " · in view" : ""))
                         .font(.system(size: 10))
                         .foregroundStyle(theme.muted)
                         .lineLimit(1)
-                    Text(p.card.headline)
+                    Text(e.card.headline)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(theme.text)
                         .lineLimit(2)
@@ -805,38 +830,67 @@ struct ReferenceHalo: View {
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(theme.surface.opacity(0.96), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(theme.accent.opacity(0.45)))
+            .background(theme.surface.opacity(0.97), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(theme.accent.opacity(store.highlight == e.ref.other ? 0.9 : 0.35)))
             .shadow(color: .black.opacity(theme.isDark ? 0.4 : 0.15), radius: 8, y: 2)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Go to “\(p.card.headline)”")
+        .onHover { inside in
+            if inside { store.highlight = e.ref.other } else if store.highlight == e.ref.other { store.highlight = nil }
+        }
+        .help("Go to “\(e.card.headline)”")
     }
 
-    /// Off-screen references for a single active card, stacked in a column
-    /// on whichever side of it has room.
-    private func layout() -> [Proxy] {
+    private func moreButton(_ count: Int, active: UUID) -> some View {
+        Menu {
+            ForEach(store.references(of: active)) { ref in
+                let name = store.card(ref.other)?.headline ?? "Card"
+                Button((ref.outgoing ? "→  " : "←  ") + name + (ref.label.isEmpty ? "" : "  ·  " + ref.label)) {
+                    store.reveal(ref.other, animated: true)
+                }
+            }
+        } label: {
+            Text("+ \(count) more").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.muted)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    /// Every reference of a single active card, in a column on whichever side
+    /// of it has room, capped to what fits in the view.
+    private func layout() -> Layout {
         guard store.selection.count == 1, let id = store.selection.first, let active = store.card(id),
-              store.viewSize != .zero else { return [] }
+              store.viewSize != .zero, store.editing != id else { return Layout() }
+        let refs = store.references(of: id).compactMap { ref -> (BoardStore.Reference, Card)? in
+            store.card(ref.other).map { (ref, $0) }
+        }
+        guard !refs.isEmpty else { return Layout() }
         let view = CGRect(origin: .zero, size: store.viewSize)
         let source = store.toScreen(active.frame)
-        let offscreen = store.references(of: id).compactMap { ref -> (BoardStore.Reference, Card, CGRect)? in
-            guard let other = store.card(ref.other) else { return nil }
-            let r = store.toScreen(other.frame)
-            return view.insetBy(dx: 24, dy: 24).intersects(r) ? nil : (ref, other, r)
-        }
-        guard !offscreen.isEmpty else { return [] }
-        let size = Self.size, gap: CGFloat = 8, margin: CGFloat = 36
-        let total = CGFloat(offscreen.count) * (size.height + gap) - gap
+        let size = Self.size, gap = Self.gap, margin: CGFloat = 30
+        let fits = max(1, Int((view.height - 24 + gap) / (size.height + gap)))
+        let shown = refs.count > fits ? fits - 1 : refs.count
+        let rows = shown + (refs.count > shown ? 1 : 0)
+        let total = CGFloat(rows) * (size.height + gap) - gap
         let right = source.maxX + margin + size.width <= view.width - 12 || source.minX - margin - size.width < 12
         let x = right ? source.maxX + margin : source.minX - margin - size.width
         var y = min(max(12, source.midY - total / 2), max(12, view.height - total - 12))
-        return offscreen.map { ref, other, r in
+        var layout = Layout()
+        for (ref, other) in refs.prefix(shown) {
             let frame = CGRect(x: x, y: y, width: size.width, height: size.height)
             y += size.height + gap
-            let angle = atan2(r.midY - frame.midY, r.midX - frame.midX)
-            return Proxy(ref: ref, card: other, frame: frame, angle: angle)
+            let r = store.toScreen(other.frame)
+            layout.entries.append(Entry(ref: ref, card: other, frame: frame,
+                                        angle: atan2(r.midY - frame.midY, r.midX - frame.midX),
+                                        inView: view.insetBy(dx: 24, dy: 24).intersects(r)))
         }
+        if refs.count > shown {
+            layout.more = refs.count - shown
+            layout.moreFrame = CGRect(x: x, y: y, width: size.width, height: 22)
+        }
+        return layout
     }
 }

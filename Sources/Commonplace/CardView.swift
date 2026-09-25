@@ -42,7 +42,7 @@ struct CardView: View {
             }
             .overlay(alignment: .bottomLeading) { referenceChip }
             .overlay {
-                if store.flash == card.id {
+                if store.flash == card.id || store.highlight == card.id {
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(theme.accent, lineWidth: 4)
                         .transition(.opacity)
