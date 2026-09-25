@@ -443,7 +443,7 @@ struct HelpOverlay: View {
         ("C", "Connect selection → click target"), ("T", "Note current moment on a video"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Delete", "Remove selection"), ("Scroll · ⌘-scroll", "Pan · zoom"),
-        ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⇧⌘T", "Next theme"), ("?", "Toggle this"),
+        ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),
     ]
 
     var body: some View {

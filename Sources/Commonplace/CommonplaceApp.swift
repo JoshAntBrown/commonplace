@@ -43,7 +43,7 @@ struct CommonplaceApp: App {
                     let i = Theme.all.firstIndex { $0.id == themeID } ?? 0
                     themeID = Theme.all[(i + 1) % Theme.all.count].id
                 }
-                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .keyboardShortcut(.space, modifiers: [.control, .command, .shift])
             }
         }
     }
