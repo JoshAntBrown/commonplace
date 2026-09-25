@@ -87,6 +87,9 @@ struct CanvasView: View {
                 Button { store.showLinkPrompt = true } label: {
                     Label("Link", systemImage: CardKind.link.symbol)
                 }.help("Add link or video (L)")
+                Button { store.add(.place, at: store.insertionPoint, edit: true) } label: {
+                    Label("Place", systemImage: CardKind.place.symbol)
+                }.help("New breadboard place (P)")
                 Button { store.pickImages() } label: {
                     Label("Image", systemImage: CardKind.image.symbol)
                 }.help("Add image (I)")
@@ -248,6 +251,7 @@ struct CanvasView: View {
         case "l": store.showLinkPrompt = true
         case "i": store.pickImages()
         case "c": store.startConnecting()
+        case "p": store.add(.place, at: p, edit: true)
         case "t":
             guard let id = store.selection.first, store.card(id)?.kind == .video else { return false }
             store.addTimestamp(id)
@@ -329,12 +333,9 @@ struct ConnectionsLayer: View {
 
     var body: some View {
         Canvas { ctx, _ in
-            let rects = Dictionary(store.board.cards.map { ($0.id, store.toScreen($0.frame)) },
-                                   uniquingKeysWith: { a, _ in a })
             let width = max(1, 1.6 * store.scale)
             for c in store.board.connections {
-                guard let a = rects[c.from], let b = rects[c.to] else { continue }
-                let (p1, p2) = Geometry.endpoints(a, b)
+                guard let (p1, p2) = store.endpoints(c) else { continue }
                 let color = store.selectedConnection == c.id ? theme.accent : theme.muted
                 var path = Path()
                 path.move(to: p1)
@@ -342,9 +343,11 @@ struct ConnectionsLayer: View {
                 ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round))
                 ctx.fill(Geometry.arrowhead(at: p2, from: p1, size: max(6, 10 * store.scale)), with: .color(color))
             }
-            if let from = store.connectingFrom, let a = rects[from], let h = store.hover {
+            if let from = store.connectingFrom, let a = store.card(from), let h = store.hover {
+                let start = store.connectingItem.flatMap { store.affordanceAnchor(a, item: $0, toward: h) }
+                    ?? Geometry.edge(store.toScreen(a.frame), toward: h)
                 var path = Path()
-                path.move(to: Geometry.edge(a, toward: h))
+                path.move(to: start)
                 path.addLine(to: h)
                 ctx.stroke(path, with: .color(theme.accent), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
             }
@@ -361,8 +364,7 @@ struct ConnectionHandle: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        if let a = store.card(connection.from), let b = store.card(connection.to) {
-            let (p1, p2) = Geometry.endpoints(store.toScreen(a.frame), store.toScreen(b.frame))
+        if let (p1, p2) = store.endpoints(connection) {
             let selected = store.selectedConnection == connection.id
             Group {
                 if store.editingConnection == connection.id {
@@ -446,7 +448,8 @@ struct HelpOverlay: View {
     private let rows: [(String, String)] = [
         ("S", "New sticky"), ("N", "New note"), ("L", "Add link or video"), ("I", "Add image"),
         ("⌘V", "Paste URL, image or text"), ("Double-click", "Sticky on canvas / edit card"),
-        ("C", "Connect selection → click target"), ("T", "Note current moment on a video"),
+        ("C", "Connect selection → click target"), ("P", "New breadboard place"),
+        ("Affordance dot", "Connect that affordance → click a place"), ("T", "Note current moment on a video"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Delete", "Remove selection"), ("Scroll · ⌘-scroll", "Pan · zoom"),
         ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),

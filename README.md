@@ -22,6 +22,12 @@ Everything lives in `~/Commonplace/<Board>/`:
 
 Markdown files dropped into `cards/` by hand appear on the board on next open.
 
+## Breadboards
+
+Press **P** for a place card (Shape Up breadboarding): an underlined name, then one affordance per
+line. Click the dot beside an affordance, then click a place, to draw the connection from that
+affordance. Connections remember which affordance they start from (`fromItem` in `board.json`).
+
 ## Video
 
 - YouTube: embedded via the IFrame API.

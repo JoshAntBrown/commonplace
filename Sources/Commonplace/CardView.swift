@@ -41,6 +41,7 @@ struct CardView: View {
             // GestureState resets even when a gesture is cancelled.
             .onChange(of: dragging) { _, active in if !active { store.endDrag() } }
             .onChange(of: resizing) { _, active in if !active { store.endResize() } }
+            .onChange(of: isEditing) { _, _ in if card.kind == .place { store.fitPlace(card.id) } }
     }
 
     // MARK: Chrome
@@ -143,6 +144,7 @@ struct CardView: View {
         case .link: link
         case .video: video
         case .image: image
+        case .place: place
         }
     }
 
@@ -256,6 +258,58 @@ struct CardView: View {
                 .font(.system(size: 12 * s))
                 .foregroundStyle(theme.muted)
         }
+    }
+
+    /// A breadboard place: underlined name, then one affordance per row with
+    /// a dot to start a connection from it.
+    private var place: some View {
+        let connected = Set(store.board.connections.filter { $0.from == card.id }.compactMap(\.fromItem))
+        return VStack(alignment: .leading, spacing: 0) {
+            if isEditing {
+                TextField("Place name", text: titleBinding)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16 * s, weight: .semibold))
+                    .foregroundStyle(theme.text)
+                    .frame(height: Place.titleHeight * s)
+                CardTextEditor(text: bodyBinding, size: 13.5 * s, color: theme.text)
+            } else {
+                Text(card.title.isEmpty ? "Place" : card.title)
+                    .font(.system(size: 16 * s, weight: .semibold))
+                    .underline()
+                    .foregroundStyle(card.title.isEmpty ? theme.muted : theme.text)
+                    .lineLimit(1)
+                    .frame(height: Place.titleHeight * s, alignment: .leading)
+                ForEach(Array(Place.affordances(card.body).enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 6 * s) {
+                        Text(item)
+                            .font(.system(size: 13.5 * s))
+                            .foregroundStyle(theme.text)
+                            .lineLimit(1)
+                        Spacer(minLength: 4 * s)
+                        Button { store.startConnecting(from: card.id, item: item) } label: {
+                            Circle()
+                                .strokeBorder(theme.accent, lineWidth: 1.5)
+                                .background(Circle().fill(connected.contains(item) ? theme.accent : .clear))
+                                .frame(width: 10 * s, height: 10 * s)
+                                .padding(4 * s)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Connect “\(item)” to a place")
+                    }
+                    .frame(height: Place.rowHeight * s)
+                }
+                if card.body.isEmpty {
+                    Text("Double-click to add affordances")
+                        .font(.system(size: 12.5 * s))
+                        .foregroundStyle(theme.muted)
+                        .frame(height: Place.rowHeight * s)
+                }
+            }
+        }
+        .padding(.leading, Place.padX * s)
+        .padding(.trailing, 6 * s)
+        .padding(.top, Place.padTop * s)
     }
 
     private var image: some View {

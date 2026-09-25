@@ -2,7 +2,7 @@ import Foundation
 import CoreGraphics
 
 enum CardKind: String, Codable, CaseIterable {
-    case sticky, note, link, video, image
+    case sticky, note, link, video, image, place
 
     var label: String {
         switch self {
@@ -11,6 +11,7 @@ enum CardKind: String, Codable, CaseIterable {
         case .link: "Link"
         case .video: "Video"
         case .image: "Image"
+        case .place: "Place"
         }
     }
 
@@ -21,6 +22,7 @@ enum CardKind: String, Codable, CaseIterable {
         case .link: "link"
         case .video: "play.rectangle"
         case .image: "photo"
+        case .place: "list.bullet.rectangle"
         }
     }
 
@@ -31,6 +33,7 @@ enum CardKind: String, Codable, CaseIterable {
         case .link: CGSize(width: 320, height: 300)
         case .video: CGSize(width: 480, height: 470)
         case .image: CGSize(width: 320, height: 240)
+        case .place: CGSize(width: 220, height: Place.height(for: ""))
         }
     }
 }
@@ -65,6 +68,37 @@ struct Connection: Identifiable, Codable, Equatable {
     var from: UUID
     var to: UUID
     var label = ""
+    /// The affordance on a place card the connection starts from, if any.
+    var fromItem: String?
+}
+
+/// Breadboard places (Shape Up): an underlined name with one affordance per
+/// line. Rows have fixed heights so connection lines can start from a
+/// specific affordance.
+enum Place {
+    static let padX: CGFloat = 14
+    static let padTop: CGFloat = 8
+    static let titleHeight: CGFloat = 34
+    static let rowHeight: CGFloat = 24
+    static let padBottom: CGFloat = 10
+
+    static func affordances(_ body: String) -> [String] {
+        body.components(separatedBy: "\n").compactMap { raw in
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            for bullet in ["- ", "* ", "• "] where line.hasPrefix(bullet) { line.removeFirst(bullet.count) }
+            return line.isEmpty ? nil : line
+        }
+    }
+
+    /// Vertical centre of affordance `i`, from the top of the card.
+    static func rowCenter(_ i: Int) -> CGFloat {
+        padTop + titleHeight + CGFloat(i) * rowHeight + rowHeight / 2
+    }
+
+    static func height(for body: String, editing: Bool = false) -> CGFloat {
+        let rows = editing ? body.components(separatedBy: "\n").count + 1 : affordances(body).count
+        return padTop + titleHeight + CGFloat(max(rows, 1)) * rowHeight + padBottom
+    }
 }
 
 struct Viewport: Codable, Equatable {

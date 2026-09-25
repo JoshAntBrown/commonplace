@@ -15,6 +15,8 @@ final class BoardStore {
     var editing: UUID?
     var editingConnection: UUID?
     var connectingFrom: UUID?
+    /// Affordance the pending connection starts from, when connecting from a place.
+    var connectingItem: String?
     /// Pointer location in canvas coordinates.
     var hover: CGPoint?
     var showHelp = false
@@ -100,6 +102,9 @@ final class BoardStore {
     func update(_ id: UUID, content: Bool = true, _ change: (inout Card) -> Void) {
         guard let i = board.cards.firstIndex(where: { $0.id == id }) else { return }
         change(&board.cards[i])
+        if board.cards[i].kind == .place {
+            board.cards[i].frame.size.height = Place.height(for: board.cards[i].body, editing: editing == id)
+        }
         if content { dirty.insert(id) }
         scheduleSave()
     }
@@ -281,6 +286,12 @@ final class BoardStore {
         editing = nil
         editingConnection = nil
         connectingFrom = nil
+        connectingItem = nil
+    }
+
+    /// Re-fits a place card's height, e.g. when editing starts or ends.
+    func fitPlace(_ id: UUID) {
+        update(id, content: false) { _ in }
     }
 
     func beginEditing(_ id: UUID) {
@@ -310,8 +321,9 @@ final class BoardStore {
 
     private func beginDrag(_ id: UUID, shift: Bool) {
         if let from = connectingFrom {
-            connect(from, id)
+            connect(from, id, item: connectingItem)
             connectingFrom = nil
+            connectingItem = nil
             dragOrigins = [:]
             return
         }
@@ -351,6 +363,7 @@ final class BoardStore {
             resizeOrigin = card.frame.size
         }
         let o = resizeOrigin ?? card.frame.size
+        // Place heights follow their affordances; only the width is free.
         update(id, content: false) {
             $0.frame.size = CGSize(width: max(140, o.width + t.width / scale),
                                    height: max(90, o.height + t.height / scale))
@@ -366,17 +379,53 @@ final class BoardStore {
 
     func startConnecting() {
         guard let id = selection.first else { return }
-        editing = nil
-        connectingFrom = id
+        startConnecting(from: id, item: nil)
     }
 
-    func connect(_ a: UUID, _ b: UUID) {
+    func startConnecting(from id: UUID, item: String?) {
+        editing = nil
+        selection = [id]
+        connectingFrom = id
+        connectingItem = item
+    }
+
+    func connect(_ a: UUID, _ b: UUID, item: String? = nil) {
         guard a != b, !board.connections.contains(where: {
-            ($0.from == a && $0.to == b) || ($0.from == b && $0.to == a)
+            $0.fromItem == item && (($0.from == a && $0.to == b) || ($0.from == b && $0.to == a))
         }) else { return }
-        board.connections.append(Connection(from: a, to: b))
+        board.connections.append(Connection(from: a, to: b, fromItem: item))
         selection = [b]
         scheduleSave()
+    }
+
+    /// Screen-space anchor for an affordance row, on the side facing `target`.
+    func affordanceAnchor(_ card: Card, item: String, toward target: CGPoint) -> CGPoint? {
+        guard card.kind == .place, let i = Place.affordances(card.body).firstIndex(of: item) else { return nil }
+        let r = toScreen(card.frame)
+        return CGPoint(x: target.x >= r.midX ? r.maxX : r.minX,
+                       y: (card.frame.minY + Place.rowCenter(i)) * scale + offset.y)
+    }
+
+    /// Screen-space start and end of a connection line.
+    func endpoints(_ c: Connection) -> (CGPoint, CGPoint)? {
+        guard let a = card(c.from), let b = card(c.to) else { return nil }
+        let ra = toScreen(a.frame), rb = toScreen(b.frame)
+        let pad: CGFloat = 6
+        guard let item = c.fromItem,
+              let start = affordanceAnchor(a, item: item, toward: CGPoint(x: rb.midX, y: rb.midY)) else {
+            return Geometry.endpoints(ra, rb)
+        }
+        // Arrows into a place land on its name, as in a hand-drawn breadboard.
+        let end: CGPoint
+        if b.kind == .place {
+            let titleY = rb.minY + (Place.padTop + Place.titleHeight / 2) * scale
+            if start.x < rb.minX { end = CGPoint(x: rb.minX - pad, y: titleY) }
+            else if start.x > rb.maxX { end = CGPoint(x: rb.maxX + pad, y: titleY) }
+            else { end = CGPoint(x: rb.midX, y: start.y < rb.minY ? rb.minY - pad : rb.maxY + pad) }
+        } else {
+            end = Geometry.edge(rb.insetBy(dx: -pad, dy: -pad), toward: start)
+        }
+        return (start, end)
     }
 
     func setLabel(_ id: UUID, _ label: String) {
