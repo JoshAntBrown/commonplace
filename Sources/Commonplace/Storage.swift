@@ -252,7 +252,7 @@ enum Seed {
         - **C** connect, then click a card
         - **T** thought · **⇧T** continue
         - **1–6** colour · **7** clear
-        - **Return** edit · **Esc** done
+        - **Return** edit / done · **⇧Return** new line
         - **F** fit · **0** 100% · **?** help
         """
         keys.frame = CGRect(x: 420, y: -10, width: 280, height: 290)

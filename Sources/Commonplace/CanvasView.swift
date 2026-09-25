@@ -317,7 +317,12 @@ struct CanvasView: View {
             return true
         }
         if inText {
-            if flags.contains(.command), event.keyCode == 36 { // ⌘Return finishes editing
+            // Return finishes a card (⇧Return is a new line); ⌘Return always does.
+            // Left alone while an input method is composing.
+            let isReturn = event.keyCode == 36 || event.keyCode == 76
+            let composing = (window.firstResponder as? NSTextView)?.hasMarkedText() == true
+            if isReturn, !composing, store.editing != nil,
+               flags.contains(.command) || !flags.contains(.shift) {
                 store.editing = nil
                 window.makeFirstResponder(nil)
                 return true
@@ -652,7 +657,7 @@ struct HelpOverlay: View {
         ("A", "Tidy the selected thread"),
         ("R", "Show every reference as a line"),
         ("[ · ]", "Video slower · faster"),
-        ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
+        ("1–6 · 7", "Colour · clear colour"), ("Return · ⇧Return", "Edit or finish · new line"), ("Esc", "Finish editing"),
         ("Drag · ⇧-drag", "Select a box of cards · add to selection"),
         ("Space-drag", "Pan the board"), ("⌘A", "Select all"),
         ("Delete", "Remove selection"), ("⌘Z · ⇧⌘Z", "Undo · redo"), ("⌘C · ⌘X · ⌘V · ⌘D", "Copy · cut · paste · duplicate cards"), ("Scroll · ⌘-scroll", "Pan · zoom"),
