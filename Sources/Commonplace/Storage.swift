@@ -7,6 +7,28 @@ import CryptoKit
 final class Library {
     let root: URL
     private(set) var boards: [String] = []
+    /// The board shown in the window.
+    @ObservationIgnored var current: String?
+    /// One live store per board, shared by the canvas and agents, so every
+    /// edit goes through the same in-memory board and undo history.
+    @ObservationIgnored private var stores: [String: BoardStore] = [:]
+
+    func store(_ name: String) -> BoardStore {
+        if let store = stores[name] { return store }
+        let store = BoardStore(library: self, name: name)
+        stores[name] = store
+        return store
+    }
+
+    func liveStore(_ name: String) -> BoardStore? { stores[name] }
+
+    /// The board as it is now: live if open, otherwise from disk.
+    func snapshot(_ name: String) -> Board { stores[name]?.board ?? load(name) }
+
+    /// Saves and forgets a board's store, before its folder is renamed or trashed.
+    func dropStore(_ name: String) {
+        stores.removeValue(forKey: name)?.close()
+    }
 
     init() {
         if let custom = UserDefaults.standard.string(forKey: "libraryPath"), !custom.isEmpty {

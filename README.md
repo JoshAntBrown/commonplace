@@ -47,3 +47,21 @@ connect it to anything else like any other card.
 
 Click **1×** in a video's title bar to step through speeds (hold for the full list), or use **[** and **]**.
 Each video remembers its speed and where you left off (`speed:` and `position:` in its front-matter).
+
+## Agents
+
+Commonplace runs an MCP server (Streamable HTTP) inside the app at `http://127.0.0.1:7717/mcp`,
+so agents work on the live boards: changes appear on the canvas and can be undone with ⌘Z.
+It only listens on this machine, needs the bearer token in `~/Commonplace/.mcp-token`, and refuses
+requests from web pages.
+
+- **Terminal panel** (⌃\` or the terminal button): a shell in `~/Commonplace`. Run `claude` there
+  and it picks up the server (`.mcp.json`) and the skill (`.claude/skills/commonplace`).
+- **Anywhere else:** Agents → Copy Claude Code Setup Command, then paste it in a terminal. Agents →
+  Install Skill for Claude Code puts the skill in `~/.claude/skills/commonplace`.
+- The skill lives in `skills/commonplace/SKILL.md` and ships inside the app bundle.
+
+Tools: list_boards, get_board, get_card, search, get_selection, get_video_moments, add_card,
+add_thought, update_card, connect, clip_url, delete_card, create_board, focus_card.
+
+Files edited outside the app (another editor, a script) are picked up and reloaded.

@@ -134,7 +134,7 @@ final class BoardStore {
 
     /// Adds a card centred on `point` (world coordinates).
     @discardableResult
-    func add(_ kind: CardKind, at point: CGPoint, edit: Bool = false,
+    func add(_ kind: CardKind, at point: CGPoint, edit: Bool = false, select: Bool = true,
              configure: (inout Card) -> Void = { _ in }) -> UUID {
         checkpoint()
         var card = Card(kind: kind)
@@ -145,22 +145,25 @@ final class BoardStore {
         configure(&card)
         board.cards.append(card)
         dirty.insert(card.id)
-        selection = [card.id]
-        selectedConnection = nil
-        editing = edit ? card.id : nil
+        if select {
+            selection = [card.id]
+            selectedConnection = nil
+            editing = edit ? card.id : nil
+        }
         scheduleSave()
         return card.id
     }
 
-    func addURL(_ raw: String, at point: CGPoint) {
+    @discardableResult
+    func addURL(_ raw: String, at point: CGPoint, select: Bool = true) -> UUID? {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: s), let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https", url.host != nil else {
             addText(s, at: point)
-            return
+            return nil
         }
         let kind: CardKind = VideoSource.detect(url) != nil ? .video : .link
-        let id = add(kind, at: point) {
+        let id = add(kind, at: point, select: select) {
             $0.url = url.absoluteString
             $0.title = url.host ?? s
         }
@@ -173,6 +176,7 @@ final class BoardStore {
                 if card.kind == .link, let image = meta.image { card.image = image }
             }
         }
+        return id
     }
 
     /// Looks up the video file behind an X post so it plays natively. Posts
@@ -227,7 +231,7 @@ final class BoardStore {
     }
 
     @discardableResult
-    func addImageData(_ data: Data, ext: String, title: String = "", at point: CGPoint) -> UUID? {
+    func addImageData(_ data: Data, ext: String, title: String = "", at point: CGPoint, select: Bool = true) -> UUID? {
         var data = data
         var ext = ext.lowercased()
         // WebKit drags arrive as TIFF; store something smaller.
@@ -246,7 +250,7 @@ final class BoardStore {
             let w = min(420, max(160, img.size.width))
             size = CGSize(width: w, height: w * img.size.height / img.size.width)
         }
-        return add(.image, at: point) {
+        return add(.image, at: point, select: select) {
             $0.image = "assets/\(name)"
             $0.title = title
             $0.frame = CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2,
@@ -289,7 +293,7 @@ final class BoardStore {
         return CGPoint(x: c.x + step, y: c.y + step)
     }
 
-    func addRemoteImage(_ url: URL, page: URL?, title: String, at point: CGPoint) {
+    func addRemoteImage(_ url: URL, page: URL?, title: String, at point: CGPoint, select: Bool = true) {
         Task { @MainActor in
             var request = URLRequest(url: url, timeoutInterval: 20)
             request.setValue(safariUserAgent, forHTTPHeaderField: "User-Agent")
@@ -297,12 +301,12 @@ final class BoardStore {
             guard let (data, response) = try? await URLSession.shared.data(for: request),
                   NSImage(data: data) != nil else {
                 // Hotlink-protected or not really an image: keep a link instead.
-                self.addURL(url.absoluteString, at: point)
+                self.addURL(url.absoluteString, at: point, select: select)
                 return
             }
             let ext = response.mimeType.flatMap { UTType(mimeType: $0)?.preferredFilenameExtension }
                 ?? (url.pathExtension.isEmpty ? "png" : url.pathExtension)
-            guard let id = self.addImageData(data, ext: ext, title: title, at: point) else { return }
+            guard let id = self.addImageData(data, ext: ext, title: title, at: point, select: select) else { return }
             self.update(id) {
                 $0.url = url.absoluteString
                 $0.source = ClipWebView.source(page: page, image: url)?.absoluteString
@@ -350,26 +354,16 @@ final class BoardStore {
     }
 
     func deleteSelection() {
-        guard selectedConnection != nil || !selection.isEmpty else { return }
-        checkpoint()
         if let cid = selectedConnection {
+            checkpoint()
             board.connections.removeAll { $0.id == cid }
             selectedConnection = nil
             scheduleSave()
             return
         }
-        guard !selection.isEmpty else { return }
-        for card in board.cards where selection.contains(card.id) {
-            removedFiles.append(card.fileName)
-            dirty.remove(card.id)
-            videos[card.id] = nil
-        }
-        board.cards.removeAll { selection.contains($0.id) }
-        board.connections.removeAll { selection.contains($0.from) || selection.contains($0.to) }
-        selection = []
-        editing = nil
-        scheduleSave()
+        deleteCards(selection)
     }
+
 
     // MARK: Selection & dragging
 
@@ -515,14 +509,17 @@ final class BoardStore {
         connectingItem = item
     }
 
-    func connect(_ a: UUID, _ b: UUID, item: String? = nil) {
+    @discardableResult
+    func connect(_ a: UUID, _ b: UUID, item: String? = nil, select: Bool = true) -> UUID? {
         guard a != b, !board.connections.contains(where: {
             $0.fromItem == item && (($0.from == a && $0.to == b) || ($0.from == b && $0.to == a))
-        }) else { return }
+        }) else { return nil }
         checkpoint()
-        board.connections.append(Connection(from: a, to: b, fromItem: item))
-        selection = [b]
+        let connection = Connection(from: a, to: b, fromItem: item)
+        board.connections.append(connection)
+        if select { selection = [b] }
         scheduleSave()
+        return connection.id
     }
 
     /// Screen-space anchor for an affordance row, on the side facing `target`.
@@ -640,20 +637,85 @@ final class BoardStore {
     }
 
     /// A sticky connected from `origin`, stacked in a column to its right.
-    private func placeThought(from origin: UUID, body: String) {
-        guard let source = card(origin) else { return }
-        let x = source.frame.maxX + 60
-        let column = board.cards.filter { $0.thoughtOf == origin && abs($0.frame.minX - x) < 1 }
-        let y = column.map { $0.frame.maxY + 16 }.max() ?? source.frame.minY
-        let frame = CGRect(x: x, y: y, width: 220, height: 130)
-        let thought = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
+    /// Agents pass `interactive: false` so the user's selection and focus stay put.
+    @discardableResult
+    func placeThought(from origin: UUID, body: String, interactive: Bool = true) -> UUID? {
+        guard let frame = columnSpot(beside: origin, size: CGSize(width: 220, height: 130)) else { return nil }
+        let thought = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY), select: interactive) {
             $0.frame = frame
             $0.thoughtOf = origin
             $0.body = body
         }
-        connect(origin, thought)
-        beginEditing(thought)
+        connect(origin, thought, select: interactive)
+        if interactive { beginEditing(thought) }
+        return thought
     }
+
+    /// The next free slot in the column to the right of a card.
+    func columnSpot(beside id: UUID, size: CGSize) -> CGRect? {
+        guard let source = card(id) else { return nil }
+        let x = source.frame.maxX + 60
+        let column = board.cards.filter { abs($0.frame.minX - x) < 1 && $0.frame.maxY > source.frame.minY - 1 }
+        let y = column.map { $0.frame.maxY + 16 }.max() ?? source.frame.minY
+        return CGRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    /// Somewhere sensible for a new card when nothing says where: the middle of
+    /// the view if the board has been shown, otherwise below everything.
+    func freeSpot() -> CGPoint {
+        if canvasSize != .zero { return nextClipPoint() }
+        let bottom = board.cards.map(\.frame.maxY).max() ?? 0
+        let left = board.cards.map(\.frame.minX).min() ?? 0
+        defer { clipCount += 1 }
+        return CGPoint(x: left + 160 + CGFloat(clipCount % 4) * 260, y: bottom + 140)
+    }
+
+    func deleteCards(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        checkpoint()
+        for card in board.cards where ids.contains(card.id) {
+            removedFiles.append(card.fileName)
+            dirty.remove(card.id)
+            videos[card.id] = nil
+        }
+        board.cards.removeAll { ids.contains($0.id) }
+        board.connections.removeAll { ids.contains($0.from) || ids.contains($0.to) }
+        selection.subtract(ids)
+        if let e = editing, ids.contains(e) { editing = nil }
+        scheduleSave()
+    }
+
+    /// Selects a card and centres the view on it.
+    func reveal(_ id: UUID) {
+        guard let card = card(id) else { return }
+        selection = [id]
+        selectedConnection = nil
+        guard canvasSize != .zero else { pendingReveal = id; return }
+        pendingReveal = nil
+        offset = CGPoint(x: canvasSize.width / 2 - card.frame.midX * scale,
+                         y: canvasSize.height / 2 - card.frame.midY * scale)
+        scheduleSave()
+    }
+
+    /// A card to reveal once the canvas has a size.
+    @ObservationIgnored var pendingReveal: UUID?
+
+    /// Re-reads the board after something outside the app changed its files.
+    /// Skipped while there are unsaved edits, which will be written instead.
+    func reloadFromDisk() {
+        guard !isClosed, dirty.isEmpty, removedFiles.isEmpty, saveWork == nil, dragOrigins == nil,
+              editing == nil else { return }
+        let fresh = library.load(board.name)
+        guard fresh.cards != board.cards || fresh.connections != board.connections else { return }
+        checkpoint()
+        board.cards = fresh.cards
+        board.connections = fresh.connections
+        for i in board.cards.indices { fitHeight(&board.cards[i]) }
+        selection.formIntersection(Set(board.cards.map(\.id)))
+    }
+
+    /// When this store last wrote to disk, so the file watcher can ignore our own writes.
+    @ObservationIgnored private(set) var lastSaved = Date.distantPast
 
     // MARK: Undo
 
@@ -738,6 +800,7 @@ final class BoardStore {
         saveWork?.cancel()
         saveWork = nil
         guard !isClosed else { return }
+        lastSaved = Date()
         library.save(board, viewport: Viewport(x: offset.x, y: offset.y, scale: scale),
                      dirty: dirty, removed: removedFiles)
         dirty = []

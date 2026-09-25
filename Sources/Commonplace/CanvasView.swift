@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import WebKit
 import AVKit
+import SwiftTerm
 import UniformTypeIdentifiers
 
 struct CanvasView: View {
@@ -17,6 +18,7 @@ struct CanvasView: View {
     @State private var monitors: [Any] = []
     @State private var linkText = ""
     @AppStorage("showBrowser") private var showBrowser = false
+    @AppStorage("showTerminal") private var showTerminal = false
 
     var body: some View {
         GeometryReader { geo in
@@ -82,6 +84,7 @@ struct CanvasView: View {
             .onAppear {
                 store.canvasSize = geo.size
                 installMonitors()
+                if let id = store.pendingReveal { store.reveal(id) }
             }
             .onChange(of: geo.size) { _, size in store.canvasSize = size }
             .onDisappear(perform: removeMonitors)
@@ -116,6 +119,9 @@ struct CanvasView: View {
                 Button { showBrowser.toggle() } label: {
                     Label("Browser", systemImage: "globe")
                 }.help("Find things on the web (B)")
+                Button { showTerminal.toggle() } label: {
+                    Label("Terminal", systemImage: "terminal")
+                }.help("Terminal for agents (⌃`)")
                 Button { store.zoomToFit() } label: {
                     Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right")
                 }.help("Zoom to fit (F)")
@@ -281,7 +287,7 @@ struct CanvasView: View {
         // Typing into a web page, or Space on a focused video player, belongs to it.
         var responder = window.firstResponder as? NSView
         while let v = responder {
-            if v is WKWebView || v is AVPlayerView { return false }
+            if v is WKWebView || v is AVPlayerView || v is TerminalView { return false }
             responder = v.superview
         }
         let flags = event.modifierFlags

@@ -38,6 +38,13 @@ Obsidian-friendly; add front-matter keys rather than inventing sidecar files. Te
   link metadata. `Browser.swift`: in-app browser panel and clipping
 - `MarkdownText.swift`: lightweight Markdown renderer with inline timestamp chips
 - `Theme.swift`: theme palettes
+- `MCPServer.swift`: in-app MCP server (HTTP/1.1 over Network.framework, JSON-RPC, token and
+  Origin/Host checks). `MCPTools.swift`: the tools. `Agents.swift`: wiring, workspace config
+  (`~/Commonplace/.mcp.json`, skill), terminal panel (SwiftTerm). `FileWatcher.swift`: reloads
+  boards edited outside the app
+- `Library` owns one live `BoardStore` per board (`library.store(name)`), shared by the canvas and
+  agents. Agent edits pass `select: false` / `interactive: false` so they never take the user's
+  selection or focus
 
 ## Conventions
 
@@ -47,7 +54,9 @@ Obsidian-friendly; add front-matter keys rather than inventing sidecar files. Te
 - SwiftUI gestures can be cancelled without `onEnded`: key sessions by start location and reset
   with `@GestureState`.
 - User-facing mutations call `checkpoint()` first for undo; background updates (metadata,
-  playback progress) must not.
+  playback progress) must not. Agent (MCP) edits are user-facing: they checkpoint too.
+- Test the MCP server with curl against the "Breadboard Example" board; the token is in
+  `~/Commonplace/.mcp-token`.
 - Canvas shortcuts live in the key monitor in `CanvasView`; they must step aside when a text view,
   web view or video player has focus.
 

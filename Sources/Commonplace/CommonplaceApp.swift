@@ -13,8 +13,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct CommonplaceApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var library = Library()
+    @State private var library: Library
     @State private var browser = BrowserModel()
+    @State private var agents: Agents
+    @AppStorage("showTerminal") private var showTerminal = false
+
+    init() {
+        let library = Library()
+        _library = State(initialValue: library)
+        _agents = State(initialValue: Agents(library: library))
+    }
     @AppStorage("theme") private var themeID = Theme.all[0].id
     @AppStorage("board") private var boardName = ""
 
@@ -22,7 +30,7 @@ struct CommonplaceApp: App {
 
     var body: some Scene {
         Window("Commonplace", id: "main") {
-            ContentView(library: library, browser: browser)
+            ContentView(library: library, browser: browser, agents: agents)
                 .environment(\.theme, theme)
                 .preferredColorScheme(theme.isDark ? .dark : .light)
                 .frame(minWidth: 800, minHeight: 500)
@@ -32,6 +40,16 @@ struct CommonplaceApp: App {
                 Button("New Board") { boardName = library.createBoard() }
                     .keyboardShortcut("n")
                 Button("Show Library in Finder") { NSWorkspace.shared.open(library.root) }
+            }
+            CommandMenu("Agents") {
+                Button(showTerminal ? "Hide Terminal" : "Show Terminal") { showTerminal.toggle() }
+                    .keyboardShortcut("`", modifiers: .control)
+                Divider()
+                Button("Copy Claude Code Setup Command") { agents.copySetupCommand() }
+                Button("Install Skill for Claude Code") { agents.installSkill() }
+                Button("Show Agent Config in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([library.root.appendingPathComponent(".mcp.json")])
+                }
             }
             CommandMenu("Theme") {
                 Picker("Theme", selection: $themeID) {
@@ -53,7 +71,9 @@ struct CommonplaceApp: App {
 struct ContentView: View {
     let library: Library
     let browser: BrowserModel
+    let agents: Agents
     @AppStorage("showBrowser") private var showBrowser = false
+    @AppStorage("showTerminal") private var showTerminal = false
     @AppStorage("board") private var boardName = ""
     @State private var store: BoardStore?
     @State private var renameTarget: String?
@@ -105,10 +125,17 @@ struct ContentView: View {
                     BrowserPanel(model: browser)
                         .frame(minWidth: 340, idealWidth: 480, maxWidth: 1000)
                 }
+                if showTerminal {
+                    TerminalPanel(agents: agents)
+                        .frame(minWidth: 360, idealWidth: 520, maxWidth: 1000)
+                }
             }
         }
         .background(WindowTheme(theme: theme))
-        .onAppear(perform: open)
+        .onAppear {
+            agents.start()
+            open()
+        }
         .onChange(of: boardName) { _, _ in open() }
         .alert("Rename board", isPresented: Binding(get: { renameTarget != nil },
                                                    set: { if !$0 { renameTarget = nil } })) {
@@ -127,9 +154,10 @@ struct ContentView: View {
         if !library.boards.contains(boardName) {
             boardName = library.boards.first ?? library.createBoard()
         }
+        library.current = boardName
         guard store?.board.name != boardName else { return }
-        store?.close()
-        let next = BoardStore(library: library, name: boardName)
+        store?.saveNow()
+        let next = library.store(boardName)
         store = next
         browser.onClip = { [weak next] clip in next?.addClip(clip) }
     }
@@ -138,10 +166,8 @@ struct ContentView: View {
         guard let old = renameTarget else { return }
         renameTarget = nil
         let isCurrent = old == boardName
-        if isCurrent {
-            store?.close()
-            store = nil
-        }
+        library.dropStore(old)
+        if isCurrent { store = nil }
         if let new = library.rename(old, to: renameText), isCurrent {
             boardName = new
         } else if isCurrent {
@@ -150,10 +176,8 @@ struct ContentView: View {
     }
 
     private func delete(_ name: String) {
-        if name == boardName {
-            store?.close()
-            store = nil
-        }
+        library.dropStore(name)
+        if name == boardName { store = nil }
         library.delete(name)
         if name == boardName || !library.boards.contains(boardName) {
             boardName = library.boards.first ?? library.createBoard()
