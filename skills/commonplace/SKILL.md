@@ -24,8 +24,8 @@ Alexander's pattern languages):
   they're drawn as solid lines, tidied into columns and read in sequence. Set with `parent` on
   `add_card`, `add_thought`, or `set_parent`.
 - **Reference: a connection.** "This relates to that", between any two cards, anywhere. Shown as
-  a chip on the card, with lines only for the card the user has selected; references that are off
-  screen float beside it. Made with `connect`.
+  a chip on the card and as a floating list beside the card the user has selected, not as lines.
+  Made with `connect`.
 - **Breadboard wires** are the exception: a connection from a place's affordance
   (`from_affordance`), or between two places, is part of the diagram ("this leads there"). Wires are
   always drawn and aren't references.

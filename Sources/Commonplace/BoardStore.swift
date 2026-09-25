@@ -974,11 +974,19 @@ final class BoardStore {
         return out + into
     }
 
-    /// Whether a reference's line is shown: it belongs to the selection, is
-    /// itself selected, or all references are on.
+    /// Whether a link is drawn as a line. References live in the chip and the
+    /// floating list instead; only breadboard wires are drawn, unless all
+    /// references are switched on (R).
     func showsReference(_ c: Connection) -> Bool {
-        isWire(c) || showAllReferences || selection.contains(c.from) || selection.contains(c.to)
-            || selectedConnection == c.id || editingConnection == c.id
+        isWire(c) || showAllReferences || editingConnection == c.id
+    }
+
+    func deleteConnection(_ id: UUID) {
+        guard board.connections.contains(where: { $0.id == id }) else { return }
+        checkpoint()
+        board.connections.removeAll { $0.id == id }
+        if selectedConnection == id { selectedConnection = nil }
+        scheduleSave()
     }
 
     /// A card to reveal once the canvas has a size.

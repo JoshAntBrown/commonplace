@@ -494,8 +494,8 @@ struct ConnectionsLayer: View {
                 ctx.fill(Path(ellipseIn: CGRect(x: end.x - r, y: end.y - r, width: r * 2, height: r * 2)), with: .color(color))
             }
 
-            // References: the web across the tree. Only the active card's are
-            // drawn (or all, with R); the rest travel as chips on the cards.
+            // Breadboard wires are drawn; references travel as chips and floating
+            // lists, and appear as lines only when R shows the whole web.
             for c in store.board.connections where store.showsReference(c) {
                 guard let (p1, p2) = store.endpoints(c) else { continue }
                 // Focus and context: the focused cards' connections come forward,
@@ -647,7 +647,7 @@ struct HelpOverlay: View {
         ("B", "Browser: search, drag or right-click to add"),
         ("Affordance dot", "Connect that affordance → click a place"), ("T · ⇧T", "Branch a thought from the selection · continue its sequence"),
         ("A", "Tidy the selected branch"),
-        ("R", "Show every reference line (or just the selection's)"),
+        ("R", "Show every reference as a line"),
         ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Drag · ⇧-drag", "Select a box of cards · add to selection"),
@@ -840,6 +840,15 @@ struct ReferenceHalo: View {
         .buttonStyle(.plain)
         .onHover { inside in
             if inside { store.highlight = e.ref.other } else if store.highlight == e.ref.other { store.highlight = nil }
+        }
+        .contextMenu {
+            Button("Go to Card") { store.reveal(e.ref.other, animated: true) }
+            Button("Make Sequence Link") { store.makeSequence(e.ref.id) }
+            Divider()
+            Button("Remove Reference", role: .destructive) {
+                store.highlight = nil
+                store.deleteConnection(e.ref.id)
+            }
         }
         .help("Go to “\(e.card.headline)”")
     }
