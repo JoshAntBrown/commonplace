@@ -106,8 +106,6 @@ struct ContentView: View {
                         .frame(minWidth: 340, idealWidth: 480, maxWidth: 1000)
                 }
             }
-            .toolbarBackground(theme.background, for: .windowToolbar)
-            .toolbarBackground(.visible, for: .windowToolbar)
         }
         .background(WindowTheme(theme: theme))
         .onAppear(perform: open)
