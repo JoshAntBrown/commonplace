@@ -39,14 +39,17 @@ struct CardView: View {
             .overlay(alignment: .bottomTrailing) {
                 if isSelected, store.selection.count == 1 { resizeHandle }
             }
-            .overlay(alignment: .bottomLeading) { referenceChip }
+            // The arrival/hover outline is always present and fades by opacity, so it
+            // moves with the card (a removed view would linger where it was) and sits
+            // beneath the reference chip.
             .overlay {
-                if store.flash == card.id || store.highlight == card.id {
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .strokeBorder(theme.accent, lineWidth: 4)
-                        .transition(.opacity)
-                }
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(theme.accent, lineWidth: 4)
+                    .opacity(store.flash == card.id || store.highlight == card.id ? 1 : 0)
+                    .animation(.easeOut(duration: 0.35), value: store.flash == card.id || store.highlight == card.id)
+                    .allowsHitTesting(false)
             }
+            .overlay(alignment: .bottomLeading) { referenceChip }
             .contentShape(Rectangle())
             .gesture(moveGesture, including: isEditing ? .subviews : .all)
             .simultaneousGesture(TapGesture(count: 2).onEnded {

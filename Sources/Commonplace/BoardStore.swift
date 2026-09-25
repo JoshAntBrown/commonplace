@@ -906,7 +906,7 @@ final class BoardStore {
         if animated { glide(to: target) } else { offset = target }
         flash = id
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { [weak self] in
-            if self?.flash == id { withAnimation(.easeOut(duration: 0.4)) { self?.flash = nil } }
+            if self?.flash == id { self?.flash = nil }
         }
         scheduleSave()
     }
