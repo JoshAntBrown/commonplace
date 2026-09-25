@@ -753,6 +753,20 @@ final class BoardStore {
 
     // MARK: Threads
 
+    /// Everything that follows from a card, at any depth.
+    func descendants(of id: UUID) -> [UUID] {
+        var result: [UUID] = []
+        var queue = [id]
+        var seen: Set<UUID> = [id]
+        while let next = queue.popLast() {
+            for child in board.cards where child.parent == next && seen.insert(child.id).inserted {
+                result.append(child.id)
+                queue.append(child.id)
+            }
+        }
+        return result
+    }
+
     func children(of id: UUID) -> [Card] {
         board.cards.filter { $0.parent == id }
             .sorted { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }
@@ -834,6 +848,21 @@ final class BoardStore {
         }
         // Otherwise the next card directly below, sharing the parent (if any).
         let frame = CGRect(x: current.frame.minX, y: current.frame.maxY + 24, width: current.frame.width, height: 130)
+        // Inserting mid-thread: the thoughts after it slide down to make room,
+        // taking their own thoughts with them.
+        if let parent = current.parent {
+            let after = children(of: parent).filter { $0.id != id && $0.frame.minY > current.frame.minY }
+            if let first = after.first, frame.maxY + 24 > first.frame.minY {
+                let shift = frame.maxY + 24 - first.frame.minY
+                let moving = Set(after.flatMap { [$0.id] + descendants(of: $0.id) })
+                checkpoint()
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    for i in board.cards.indices where moving.contains(board.cards[i].id) {
+                        board.cards[i].frame.origin.y += shift
+                    }
+                }
+            }
+        }
         let next = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
             $0.frame = frame
             $0.parent = current.parent
