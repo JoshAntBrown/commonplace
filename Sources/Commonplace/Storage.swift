@@ -136,6 +136,8 @@ enum CardFile {
         if let summary = card.summary, !summary.isEmpty { lines.append("summary: \(quote(summary))") }
         if let media = card.media { lines.append("media: \(quote(media))") }
         if let source = card.source { lines.append("source: \(quote(source))") }
+        if card.speed != 1 { lines.append("speed: \(card.speed)") }
+        if card.position > 0 { lines.append("position: \(Int(card.position))") }
         if let video = card.momentOf { lines.append("moment-of: \(video.uuidString.lowercased())") }
         lines.append("created: \(dates.string(from: card.created))")
         lines.append("---")
@@ -173,6 +175,8 @@ enum CardFile {
         card.media = fields["media"]
         card.source = fields["source"]
         card.momentOf = fields["moment-of"].flatMap(UUID.init(uuidString:))
+        card.speed = fields["speed"].flatMap(Double.init) ?? 1
+        card.position = fields["position"].flatMap(Double.init) ?? 0
         card.created = fields["created"].flatMap(dates.date(from:)) ?? Date()
         card.body = body
         card.file = fileName

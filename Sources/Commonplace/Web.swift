@@ -49,12 +49,53 @@ enum VideoSource: Equatable {
 final class VideoController {
     weak var webView: WKWebView?
     private(set) var player: AVPlayer?
+    /// Playback speed, kept across pause/play.
+    private(set) var rate: Double = 1
+    /// Where to pick up from when the player first loads.
+    var resumeAt: Double = 0
+    /// Called every few seconds during playback with the current time.
+    var onProgress: ((Double) -> Void)?
+    private var timeObserver: Any?
+
+    deinit {
+        if let timeObserver { player?.removeTimeObserver(timeObserver) }
+    }
 
     func player(for url: URL) -> AVPlayer {
         if let player, (player.currentItem?.asset as? AVURLAsset)?.url == url { return player }
+        if let timeObserver { player?.removeTimeObserver(timeObserver) }
         let p = AVPlayer(url: url)
+        p.defaultRate = Float(rate)
+        if resumeAt > 1 {
+            p.seek(to: CMTime(seconds: resumeAt, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+        timeObserver = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 5, preferredTimescale: 1), queue: .main) {
+            [weak self, weak p] time in
+            guard let self, let p, p.rate != 0 else { return }
+            self.report(time.seconds, duration: p.currentItem?.duration.seconds)
+        }
         player = p
         return p
+    }
+
+    /// Records progress; finishing a video resets it to the start.
+    func report(_ t: Double, duration: Double?) {
+        guard t.isFinite else { return }
+        if let duration, duration.isFinite, duration - t < 10 {
+            onProgress?(0)
+        } else {
+            onProgress?(t)
+        }
+    }
+
+    func setRate(_ r: Double) {
+        rate = r
+        if let player {
+            player.defaultRate = Float(r)
+            if player.rate != 0 { player.rate = Float(r) }
+        } else {
+            webView?.evaluateJavaScript("window.cpRate && cpRate(\(r)); 0", completionHandler: nil)
+        }
     }
 
     func currentTime(_ done: @escaping (Double) -> Void) {
@@ -83,27 +124,61 @@ struct WebVideoView: NSViewRepresentable {
     let source: VideoSource
     let controller: VideoController
 
-    /// Fallback helpers for pages that play a plain `<video>` element.
-    private static let helperJS = """
-    if (!window.cpTime) {
-      window.cpTime = function () { var v = document.querySelector('video'); return v ? v.currentTime : 0; };
-      window.cpSeek = function (s) { var v = document.querySelector('video'); if (v) { v.currentTime = s; v.play(); } };
+    /// Fallback helpers for pages that play a plain `<video>` element,
+    /// including resuming, keeping the chosen speed and reporting progress.
+    private static func helperJS(resumeAt: Double, rate: Double) -> String {
+        """
+        if (!window.cpTime) {
+          window.cpRateValue = \(rate);
+          window.cpTime = function () { var v = document.querySelector('video'); return v ? v.currentTime : 0; };
+          window.cpSeek = function (s) { var v = document.querySelector('video'); if (v) { v.currentTime = s; v.play(); } };
+          window.cpRate = function (r) {
+            window.cpRateValue = r;
+            document.querySelectorAll('video').forEach(function (v) { v.playbackRate = r; });
+          };
+          var resumed = false;
+          document.addEventListener('loadedmetadata', function (e) {
+            if (!resumed && e.target.tagName === 'VIDEO' && \(resumeAt) > 1) { e.target.currentTime = \(resumeAt); resumed = true; }
+          }, true);
+          document.addEventListener('play', function (e) {
+            if (e.target.tagName === 'VIDEO') { e.target.playbackRate = window.cpRateValue; }
+          }, true);
+          setInterval(function () {
+            var v = document.querySelector('video');
+            if (v && !v.paused) { window.webkit.messageHandlers.cpProgress.postMessage([v.currentTime, v.duration || 0]); }
+          }, 5000);
+        }
+        """
     }
-    """
+
+    /// Relays progress from page scripts without the page retaining the controller.
+    private final class ProgressRelay: NSObject, WKScriptMessageHandler {
+        weak var controller: VideoController?
+        init(_ controller: VideoController) { self.controller = controller }
+
+        func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let values = message.body as? [NSNumber], let t = values.first?.doubleValue else { return }
+            let duration = values.count > 1 ? values[1].doubleValue : nil
+            controller?.report(t, duration: duration.flatMap { $0 > 0 ? $0 : nil })
+        }
+    }
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.mediaTypesRequiringUserActionForPlayback = []
         config.preferences.isElementFullscreenEnabled = true
         config.userContentController.addUserScript(
-            WKUserScript(source: Self.helperJS, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+            WKUserScript(source: Self.helperJS(resumeAt: controller.resumeAt, rate: controller.rate),
+                         injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        config.userContentController.add(ProgressRelay(controller), name: "cpProgress")
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.customUserAgent = safariUserAgent
         controller.webView = webView
 
         switch source {
         case .youtube(let id, let start):
-            webView.loadHTMLString(Self.youtubeHTML(id: id, start: start),
+            let resume = controller.resumeAt > 1 ? Int(controller.resumeAt) : start
+            webView.loadHTMLString(Self.youtubeHTML(id: id, start: resume, rate: controller.rate),
                                    baseURL: URL(string: "https://commonplace.local/"))
         case .page(let url), .file(let url):
             webView.load(URLRequest(url: url))
@@ -115,7 +190,7 @@ struct WebVideoView: NSViewRepresentable {
         controller.webView = webView
     }
 
-    private static func youtubeHTML(id: String, start: Int) -> String {
+    private static func youtubeHTML(id: String, start: Int, rate: Double) -> String {
         let safeID = id.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
         return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -126,8 +201,15 @@ struct WebVideoView: NSViewRepresentable {
         var player;
         function onYouTubeIframeAPIReady() {
           player = new YT.Player('p', { videoId: '\(safeID)',
-            playerVars: { playsinline: 1, rel: 0, start: \(start), origin: 'https://commonplace.local' } });
+            playerVars: { playsinline: 1, rel: 0, start: \(start), origin: 'https://commonplace.local' },
+            events: { onReady: function (e) { e.target.setPlaybackRate(\(rate)); } } });
         }
+        function cpRate(r) { if (player && player.setPlaybackRate) { player.setPlaybackRate(r); } }
+        setInterval(function () {
+          if (player && player.getPlayerState && player.getPlayerState() === 1) {
+            window.webkit.messageHandlers.cpProgress.postMessage([player.getCurrentTime(), player.getDuration() || 0]);
+          }
+        }, 5000);
         function cpTime() { return player && player.getCurrentTime ? player.getCurrentTime() : 0; }
         function cpSeek(s) { if (player && player.seekTo) { player.seekTo(s, true); player.playVideo(); } }
         </script></body></html>

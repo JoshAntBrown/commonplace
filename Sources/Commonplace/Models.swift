@@ -60,6 +60,10 @@ struct Card: Identifiable, Equatable {
     var source: String?
     /// For a moment sticky: the video card it marks a point in.
     var momentOf: UUID?
+    /// Playback speed for a video card.
+    var speed: Double = 1
+    /// Where playback was last, in seconds, so the video resumes there.
+    var position: Double = 0
     var created = Date()
     /// The markdown file this card was loaded from, if any.
     var file: String?
@@ -67,6 +71,7 @@ struct Card: Identifiable, Equatable {
     var fileName: String { file ?? id.uuidString.lowercased() + ".md" }
 
     static let headerHeight: CGFloat = 30
+    static let speeds: [Double] = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]
 
     /// A video card is its header plus a 16:9 player; moments live in stickies.
     static func videoHeight(width: CGFloat) -> CGFloat { headerHeight + width * 9 / 16 }

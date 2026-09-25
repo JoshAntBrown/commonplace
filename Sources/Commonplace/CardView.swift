@@ -11,10 +11,14 @@ struct CardView: View {
     @GestureState private var dragging = false
     @GestureState private var resizing = false
 
+    /// Content (text, images, video) scales with zoom.
     private var s: CGFloat { store.scale }
+    /// Chrome (title bars, buttons, badges, corners) scales down with zoom but
+    /// never past 100%, so zooming into a card doesn't blow up its frame.
+    private var c: CGFloat { min(store.scale, 1) }
     private var isSelected: Bool { store.selection.contains(card.id) }
     private var isEditing: Bool { store.editing == card.id }
-    private var radius: CGFloat { 10 * s }
+    private var radius: CGFloat { 10 * c }
 
     var body: some View {
         content
@@ -22,7 +26,7 @@ struct CardView: View {
             .background(fill)
             .overlay(alignment: .top) {
                 if card.kind == .note, card.color != .none {
-                    theme.color(card.color).frame(height: 4 * s)
+                    theme.color(card.color).frame(height: 4 * c)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -31,7 +35,7 @@ struct CardView: View {
                     .strokeBorder(isSelected ? theme.accent : theme.border.opacity(card.kind == .sticky ? 0 : 1),
                                   lineWidth: isSelected ? 2 : 1)
             )
-            .shadow(color: .black.opacity(theme.isDark ? 0.35 : 0.12), radius: 10 * s, y: 3 * s)
+            .shadow(color: .black.opacity(theme.isDark ? 0.35 : 0.12), radius: 10 * c, y: 3 * c)
             .overlay(alignment: .bottomTrailing) { if isSelected { resizeHandle } }
             .contentShape(Rectangle())
             .gesture(moveGesture, including: isEditing ? .subviews : .all)
@@ -82,21 +86,25 @@ struct CardView: View {
     private func header() -> some View { header { EmptyView() } }
 
     private func header<Trailing: View>(@ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(spacing: 6 * s) {
+        HStack(spacing: 6 * c) {
             Image(systemName: card.kind.symbol)
             Text(card.title.isEmpty ? card.kind.label : card.title)
                 .fontWeight(.medium)
                 .lineLimit(1)
                 .foregroundStyle(theme.text)
-            Spacer(minLength: 4 * s)
+            Spacer(minLength: 4 * c)
             trailing()
         }
-        .font(.system(size: 11.5 * s))
+        .font(.system(size: 11.5 * c))
         .foregroundStyle(theme.muted)
-        .padding(.horizontal, 10 * s)
-        .frame(height: Card.headerHeight * s)
+        .padding(.horizontal, 10 * c)
+        .frame(height: Card.headerHeight * c)
         .frame(maxWidth: .infinity)
         .background(card.color == .none ? theme.raised : theme.color(card.color).opacity(0.35))
+    }
+
+    static func speedLabel(_ speed: Double) -> String {
+        (speed == speed.rounded() ? String(Int(speed)) : String(format: "%g", speed)) + "×"
     }
 
     private var openButton: some View {
@@ -216,8 +224,23 @@ struct CardView: View {
     private var video: some View {
         VStack(alignment: .leading, spacing: 0) {
             header {
+                Menu {
+                    ForEach(Card.speeds, id: \.self) { speed in
+                        Button(Self.speedLabel(speed)) { store.setSpeed(card.id, speed) }
+                    }
+                } label: {
+                    Text(Self.speedLabel(card.speed))
+                        .font(.system(size: 11.5 * c, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(card.speed == 1 ? theme.muted : theme.accent)
+                } primaryAction: {
+                    store.stepSpeed(card.id, up: true)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Playback speed: click to speed up, hold for all speeds ([ and ])")
                 Button { store.addMoment(card.id) } label: {
-                    HStack(spacing: 3 * s) {
+                    HStack(spacing: 3 * c) {
                         Image(systemName: "plus")
                         Text("Moment")
                     }
@@ -238,7 +261,7 @@ struct CardView: View {
                     WebVideoView(source: source, controller: store.video(card.id))
                 }
             }
-            .frame(height: card.frame.width * s * 9 / 16)
+            .frame(height: playerHeight)
             .onAppear { store.resolveMedia(card.id) }
             // Older boards kept moments in the card; still show them.
             if isEditing {
@@ -247,6 +270,16 @@ struct CardView: View {
                 ScrollView { notes.padding(12 * s) }
             }
         }
+    }
+
+    /// A plain video card gives the player everything below the header, so a
+    /// fixed-size header leaves the player a touch taller than 16:9 when zoomed
+    /// in (it letterboxes).
+    private var playerHeight: CGFloat {
+        if card.body.isEmpty && !isEditing {
+            return max(0, card.frame.height * s - Card.headerHeight * c)
+        }
+        return card.frame.width * s * 9 / 16
     }
 
     @ViewBuilder private var notes: some View {
@@ -291,8 +324,8 @@ struct CardView: View {
                             Circle()
                                 .strokeBorder(theme.accent, lineWidth: 1.5)
                                 .background(Circle().fill(connected.contains(item) ? theme.accent : .clear))
-                                .frame(width: 10 * s, height: 10 * s)
-                                .padding(4 * s)
+                                .frame(width: 10 * c, height: 10 * c)
+                                .padding(4 * c)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -328,13 +361,13 @@ struct CardView: View {
                 if isSelected, let source = card.source.flatMap(URL.init(string:)), let host = source.host {
                     Button { NSWorkspace.shared.open(source) } label: {
                         Label(host, systemImage: "arrow.up.right")
-                            .font(.system(size: 11 * s))
-                            .padding(.horizontal, 7 * s)
-                            .padding(.vertical, 3 * s)
+                            .font(.system(size: 11 * c))
+                            .padding(.horizontal, 7 * c)
+                            .padding(.vertical, 3 * c)
                             .background(.ultraThinMaterial, in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .padding(8 * s)
+                    .padding(8 * c)
                     .help(source.absoluteString)
                 }
             }

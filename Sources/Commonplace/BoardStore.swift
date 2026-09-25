@@ -510,8 +510,31 @@ final class BoardStore {
     func video(_ id: UUID) -> VideoController {
         if let v = videos[id] { return v }
         let v = VideoController()
+        if let card = card(id) {
+            if card.speed != 1 { v.setRate(card.speed) }
+            v.resumeAt = card.position
+        }
+        v.onProgress = { [weak self] t in
+            guard let self, let old = self.card(id)?.position, abs(old - t) >= 2 else { return }
+            self.update(id) { $0.position = t }
+        }
         videos[id] = v
         return v
+    }
+
+    func setSpeed(_ id: UUID, _ speed: Double) {
+        guard let videoID = videoID(for: id) else { return }
+        update(videoID) { $0.speed = speed }
+        video(videoID).setRate(speed)
+    }
+
+    /// Steps through `Card.speeds`, wrapping when going up.
+    func stepSpeed(_ id: UUID, up: Bool) {
+        guard let videoID = videoID(for: id), let current = card(videoID)?.speed else { return }
+        let speeds = Card.speeds
+        let i = speeds.firstIndex { $0 >= current - 0.001 } ?? 1
+        let next = up ? (i + 1 < speeds.count ? speeds[i + 1] : speeds[0]) : speeds[max(0, i - 1)]
+        setSpeed(videoID, next)
     }
 
     /// Places and plain video cards size themselves; only their width is free.

@@ -44,3 +44,6 @@ affordance. Connections remember which affordance they start from (`fromItem` in
 Press **T** (or **+ Moment**) on a selected video to add a moment: a sticky stamped with the
 current time, stacked beside the video and connected to it. Click its timestamp to jump back;
 connect it to anything else like any other card.
+
+Click **1×** in a video's title bar to step through speeds (hold for the full list), or use **[** and **]**.
+Each video remembers its speed and where you left off (`speed:` and `position:` in its front-matter).

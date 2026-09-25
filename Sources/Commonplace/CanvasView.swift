@@ -292,6 +292,9 @@ struct CanvasView: View {
         case "t":
             guard let id = store.selection.first, store.videoID(for: id) != nil else { return false }
             store.addMoment(id)
+        case "[", "]":
+            guard let id = store.selection.first, store.videoID(for: id) != nil else { return false }
+            store.stepSpeed(id, up: key == "]")
         case "b":
             let defaults = UserDefaults.standard
             defaults.set(!defaults.bool(forKey: "showBrowser"), forKey: "showBrowser")
@@ -373,7 +376,8 @@ struct ConnectionsLayer: View {
 
     var body: some View {
         Canvas { ctx, _ in
-            let width = max(1, 1.6 * store.scale)
+            let chrome = min(store.scale, 1)
+            let width = max(1, 1.6 * chrome)
             for c in store.board.connections {
                 guard let (p1, p2) = store.endpoints(c) else { continue }
                 let color = store.selectedConnection == c.id ? theme.accent : theme.muted
@@ -381,7 +385,7 @@ struct ConnectionsLayer: View {
                 path.move(to: p1)
                 path.addLine(to: p2)
                 ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round))
-                ctx.fill(Geometry.arrowhead(at: p2, from: p1, size: max(6, 10 * store.scale)), with: .color(color))
+                ctx.fill(Geometry.arrowhead(at: p2, from: p1, size: max(6, 10 * chrome)), with: .color(color))
             }
             if let from = store.connectingFrom, let a = store.card(from), let h = store.hover {
                 let start = store.connectingItem.flatMap { store.affordanceAnchor(a, item: $0, toward: h) }
@@ -425,7 +429,7 @@ struct ConnectionHandle: View {
                         .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
                 } else if !connection.label.isEmpty {
                     Text(connection.label)
-                        .font(.system(size: max(9, 12 * store.scale)))
+                        .font(.system(size: max(9, 12 * min(store.scale, 1))))
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -491,6 +495,7 @@ struct HelpOverlay: View {
         ("C", "Connect selection → click target"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
         ("Affordance dot", "Connect that affordance → click a place"), ("T", "Moment sticky from a video or its moments"),
+        ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Delete", "Remove selection"), ("Scroll · ⌘-scroll", "Pan · zoom"),
         ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),
