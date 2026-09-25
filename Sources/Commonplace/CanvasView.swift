@@ -770,10 +770,9 @@ struct ReferenceHalo: View {
         if !layout.entries.isEmpty, let id = store.selection.first, let active = store.card(id) {
             let source = store.toScreen(active.frame)
             ZStack(alignment: .topLeading) {
-                // Out-of-view entries get a faint leader to the card; in-view
-                // ones already have the real line.
+                // A faint dotted leader ties each entry to the active card.
                 Canvas { ctx, _ in
-                    for e in layout.entries where !e.inView {
+                    for e in layout.entries {
                         let mid = CGPoint(x: e.frame.midX, y: e.frame.midY)
                         let start = Geometry.edge(source.insetBy(dx: -4, dy: -4), toward: mid)
                         let end = Geometry.edge(e.frame.insetBy(dx: -3, dy: -3), toward: start)
