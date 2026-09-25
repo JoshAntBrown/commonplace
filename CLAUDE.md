@@ -53,8 +53,15 @@ Obsidian-friendly; add front-matter keys rather than inventing sidecar files. Te
 
 ## Design principles
 
-- Zettelkasten is an inspiration, not a workflow. Stickies can stay stickies forever: no inboxes,
+- A general tool for thinking, not a tool for any one method. Zettelkasten, Christopher
+  Alexander's pattern languages, Shape Up breadboarding and others are inspirations and tools in
+  the toolbox, never the app's identity. Prefer general features that many methods can use
+  (templates, connection types, zoom behaviour) over method-specific modes.
+- Methods are inspirations, not workflows. Stickies can stay stickies forever: no inboxes,
   counts or nudges to "process" notes. Conversions (e.g. sticky → note) are optional affordances.
+- Structure-preserving (after Alexander): good interactions let a board grow piecemeal,
+  strengthening what's there rather than forcing reorganisation. Drawing a thought out of a card
+  is the model.
 - Everything is a first-class card that can be connected: moments and thoughts are stickies, not
   fields inside other cards.
 - Keyboard-first: every common action has a single-key shortcut on the canvas.
