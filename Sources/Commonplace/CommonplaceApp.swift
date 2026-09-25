@@ -81,6 +81,8 @@ struct ContentView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(theme.surface)
             .navigationSplitViewColumnWidth(min: 170, ideal: 210)
             .toolbar {
                 ToolbarItem {
@@ -103,7 +105,10 @@ struct ContentView: View {
                         .frame(minWidth: 340, idealWidth: 480, maxWidth: 1000)
                 }
             }
+            .toolbarBackground(theme.background, for: .windowToolbar)
+            .toolbarBackground(.visible, for: .windowToolbar)
         }
+        .background(WindowTheme(theme: theme))
         .onAppear(perform: open)
         .onChange(of: boardName) { _, _ in open() }
         .alert("Rename board", isPresented: Binding(get: { renameTarget != nil },
@@ -155,5 +160,22 @@ struct ContentView: View {
             boardName = library.boards.first ?? library.createBoard()
         }
         open()
+    }
+}
+
+/// Paints the window itself (behind the title bar and sidebar) with the theme,
+/// so the chrome doesn't stay system grey.
+private struct WindowTheme: NSViewRepresentable {
+    let theme: Theme
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let color = NSColor(theme.background)
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.backgroundColor = color
+            window.titlebarAppearsTransparent = true
+        }
     }
 }
