@@ -60,8 +60,8 @@ struct CardView: View {
             .onChange(of: resizing) { _, active in if !active { store.endResize() } }
             .onChange(of: isEditing) { _, _ in if card.kind == .place { store.fitPlace(card.id) } }
             .contextMenu {
-                Button("Branch") { store.selection = [card.id]; store.branch() }
-                Button("Thread a Card After This…") { store.selection = [card.id]; store.startThreadLink() }
+                Button("Add Thought") { store.selection = [card.id]; store.addThought() }
+                Button("Choose What Follows This…") { store.selection = [card.id]; store.startThreadLink() }
                 Button("Tidy Thread") { store.tidy([card.id]) }
                 if card.parent != nil {
                     Divider()
@@ -396,14 +396,14 @@ struct CardView: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help("Playback speed: click to speed up, hold for all speeds ([ and ])")
-                Button { store.branchAtCurrentTime(card.id) } label: {
+                Button { store.addThoughtAtCurrentTime(card.id) } label: {
                     HStack(spacing: 3 * c) {
                         Image(systemName: "plus")
-                        Text("Branch")
+                        Text("Thought")
                     }
                 }
                 .buttonStyle(.plain)
-                .help("Branch here, anchored at the current time (T)")
+                .help("Add a thought at the current time (T)")
                 openButton
             }
             Group {
@@ -573,7 +573,7 @@ struct CardTextEditor: View {
     }
 
     /// Once the text view has focus, put the cursor after any existing text
-    /// (e.g. a branch's timestamp anchor) and insert anything typed in the meantime.
+    /// (e.g. a thought's timestamp) and insert anything typed in the meantime.
     private func prepare(attempt: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0 : 0.03)) {
             guard let tv = NSApp.keyWindow?.firstResponder as? NSTextView else {

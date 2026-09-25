@@ -27,9 +27,9 @@ Markdown files dropped into `cards/` by hand appear on the board on next open.
 - **Card**: anything on a board (sticky, note, link, video, image, place).
 - **Thread**: the "follows from" link (`parent:` in front-matter). One per card, so a board is a set
   of trees, drawn as solid curves. **A** tidies the selected thread into columns.
-- **Branch** (**T**): a new card threaded from the selection. **Continue** (**⇧T**): the next card in
-  the same thread. **⇧C** then a click threads that card after the selection.
-- **Anchor**: where in its parent a branch points; for a video, a timestamp that seeks it.
+- **Thought** (**T**): a sticky drawn out of the selection and threaded to it; on a video it starts
+  with the current time, which seeks the video when clicked. **Continue** (**⇧T**): the next card in
+  the same thread. **⇧C** then a click makes that card follow the selection.
 - **Reference** (**C** then a click): "see also". Shown as a chip on the card and a floating list
   beside the selected card, not as lines (**R** draws them all). Right-click converts to a thread.
 - **Wire**: a breadboard link from a place's affordance to a place; always drawn.
@@ -56,8 +56,8 @@ affordance. Connections remember which affordance they start from (`fromItem` in
 - X posts: the MP4 behind the post is resolved and played natively (AVKit).
 - Vimeo and other pages: loaded in a web view.
 
-Press **T** (or **+ Branch**) on a selected video to branch a note anchored at the current time:
-a sticky stamped with the timestamp, threaded from the video. Click the timestamp to jump back.
+Press **T** (or **+ Thought**) on a selected video to add a thought at the current time: a sticky
+starting with the timestamp, threaded from the video. Click the timestamp to jump back.
 
 Click **1×** in a video's title bar to step through speeds (hold for the full list), or use **[** and **]**.
 Each video remembers its speed and where you left off (`speed:` and `position:` in its front-matter).
@@ -75,8 +75,8 @@ requests from web pages.
   Install Skill for Claude Code puts the skill in `~/.claude/skills/commonplace`.
 - The skill lives in `skills/commonplace/SKILL.md` and ships inside the app bundle.
 
-Tools: list_boards, get_board, get_card, search, get_selection, get_video_branches, add_card,
-branch, update_card, add_reference, set_thread, tidy_thread, clip_url, delete_card, create_board,
+Tools: list_boards, get_board, get_card, search, get_selection, get_video_thoughts, add_card,
+add_thought, update_card, add_reference, set_thread, tidy_thread, clip_url, delete_card, create_board,
 focus_card.
 
 Files edited outside the app (another editor, a script) are picked up and reloaded.

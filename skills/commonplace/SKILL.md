@@ -23,12 +23,11 @@ Commonplace uses a small, fixed vocabulary. Use these words with the user too.
 - **Thread**: the "follows from" link. A card's `parent` is the card it follows from, elaborates or
   forms part of. One parent per card, so a board is a set of trees; threads give it its order.
   They're drawn as solid curves and can be tidied into columns (`tidy_thread`). Set with `parent`
-  on `add_card`, with `branch`, or with `set_thread`.
-- **Branch**: a new card threaded from another (the user presses T). Use `branch` to respond to a
-  card. Several points from one source are sibling branches under it.
-- **Anchor**: where in its parent a branch points. For a video it's a timestamp at the start of the
-  body, like `[12:34]`, which seeks the video when clicked. `branch` on a video anchors at the
-  current playback time unless you pass `timestamp`.
+  on `add_card`, with `add_thought`, or with `set_thread`.
+- **Thought**: a sticky drawn out of another card and threaded to it (the user presses T). Use
+  `add_thought` to respond to a card. Several points from one source are sibling thoughts under it.
+  A thought on a video starts with a timestamp like `[12:34]`, which seeks the video when clicked;
+  `add_thought` on a video uses the current playback time unless you pass `timestamp`.
 - **Reference**: "see also", between any two cards anywhere. Shown as a chip on the card and as a
   floating list beside the selected card, not as lines. Made with `add_reference`, labelled with
   why ("supports", "in tension with", "example of").
@@ -44,7 +43,7 @@ references.
 1. **Look before you act.** Call `get_selection` first: what the user has selected is almost
    always what they mean by "this". Use `get_board` or `search` for the wider context.
 2. **Add, don't rewrite.** Put your contribution in new cards:
-   - Respond to a card with `branch`, which places a sticky threaded from it.
+   - Respond to a card with `add_thought`, which places a sticky threaded from it.
    - Use `add_card` with `parent` when a card elaborates another, or `near` plus `add_reference` for a
      looser relationship.
    - When you do change a card, prefer `update_card` with `append` over replacing the text.
@@ -64,7 +63,7 @@ A board is read visually. A pile of cards joined by long crossing lines is noise
 each card is.
 
 - **Build trees, not scatter.** Give each new card the `parent` it grows out of, so related ideas
-  form a branch. Several points from one source are siblings under it. After adding a batch, call
+  form a thread. Several points from one source are siblings under it. After adding a batch, call
   `tidy_thread` on the card you built from so the new branch is laid out cleanly. Never tidy the user's
   existing arrangement unless they ask.
 - **Reference sparingly.** Draw only the strongest cross-links, usually one or two per card. If a
@@ -78,13 +77,13 @@ each card is.
 
 ## Recipes
 
-- **Summarise a talk from its branches:** `get_video_branches` on the video, then write one note
-  threaded from the video (`parent`) that pulls the branches together, citing timestamps like `[12:34]`.
+- **Summarise a talk from its thoughts:** `get_video_thoughts` on the video, then write one note
+  threaded from the video (`parent`) that pulls the thoughts together, citing timestamps like `[12:34]`.
 - **Find related ideas:** `search` across all boards for the key terms, then `add_reference` genuinely
   related cards on the same board, with a label. Mention relevant cards on other boards in your
   reply rather than copying them over.
 - **Research a concept:** find good sources on the web, `clip_url` the best one or two near the
-  relevant card, and add a short `branch` explaining why each matters.
+  relevant card, and add a short `add_thought` explaining why each matters.
 
 ## Tips
 

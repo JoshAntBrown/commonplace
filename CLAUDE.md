@@ -30,7 +30,7 @@ Obsidian-friendly; add front-matter keys rather than inventing sidecar files. Te
 - `Models.swift`: `Card`, `CardKind`, `Connection`, `Place` breadboard metrics, `Timestamp`
 - `Storage.swift`: `Library` (boards on disk), `CardFile` front-matter encode/decode, seed board
 - `BoardStore.swift`: all board state and operations: add/update, drag/resize, connections,
-  branches and threads, clipping, undo/redo snapshots, autosave
+  thoughts and threads, clipping, undo/redo snapshots, autosave
 - `CanvasView.swift`: canvas, gestures, marquee, NSEvent monitors for keys/scroll/pinch,
   connection drawing, help overlay
 - `CardView.swift`: per-kind card rendering and editing
@@ -72,10 +72,11 @@ Obsidian-friendly; add front-matter keys rather than inventing sidecar files. Te
   strengthening what's there rather than forcing reorganisation. Drawing a thought out of a card
   is the model.
 - Vocabulary (use it in UI, tools and docs): **card**; **thread** (the follows-from link,
-  `Card.parent`, one per card, a tree; gives order); **branch** (a card threaded from another, T);
-  **anchor** (where in its parent a branch points, e.g. a video timestamp); **reference** (see-also,
+  `Card.parent`, one per card, a tree; gives order); **thought** (a sticky drawn out of another card
+  and threaded to it, T; on a video it starts with a timestamp); **reference** (see-also,
   `Connection`, shown as chips and floating lists, not lines); **wire** (breadboard links, always
-  drawn). Don't reintroduce "moment", "thought" or "sequence" as names.
-- Everything is a first-class card that can be threaded or referenced: branches are stickies, not
+  drawn). These are the user's words: don't invent new terms
+  (no "moment", "branch", "anchor", "sequence link", "jot").
+- Everything is a first-class card that can be threaded or referenced: thoughts are stickies, not
   fields inside other cards.
 - Keyboard-first: every common action has a single-key shortcut on the canvas.

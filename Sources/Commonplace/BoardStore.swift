@@ -54,7 +54,7 @@ final class BoardStore {
     /// Consecutive checkpoints with the same key (typing in one editing
     /// session) collapse into one undo step.
     @ObservationIgnored private var lastCheckpointKey: String?
-    /// Several changes in one run-loop turn (e.g. a branch's card and its
+    /// Several changes in one run-loop turn (e.g. a thought's card and its
     /// arrow) are one undo step.
     @ObservationIgnored private var checkpointedThisTurn = false
     @ObservationIgnored private var editSession = 0
@@ -439,7 +439,7 @@ final class BoardStore {
         pendingTyping = ""
         selection = [id]
         selectedConnection = nil
-        // A plain video card has nothing to edit; its notes are branches.
+        // A plain video card has nothing to edit; its notes are thoughts.
         if let card = card(id), card.kind == .video, card.body.isEmpty { return }
         editing = id
     }
@@ -643,7 +643,7 @@ final class BoardStore {
         }
     }
 
-    /// The video a card belongs to: itself, or the video a branch is anchored in.
+    /// The video a card belongs to: itself, or the video a thought is about.
     func videoID(for id: UUID) -> UUID? {
         guard let card = card(id) else { return nil }
         if card.kind == .video { return id }
@@ -713,7 +713,7 @@ final class BoardStore {
         connect(parent, child, select: false)
     }
 
-    /// Branches used to carry both a parent and an arrow to it; the parent is
+    /// Thoughts used to carry both a parent and an arrow to it; the parent is
     /// now drawn as the thread, so the duplicate arrow goes.
     private func migrateThreads() {
         let parents = Dictionary(board.cards.compactMap { c in c.parent.map { (c.id, $0) } }, uniquingKeysWith: { a, _ in a })
@@ -725,10 +725,10 @@ final class BoardStore {
     }
 
     /// ⇧T: continue the thread — a new card after the selected one, sharing
-    /// its parent. From a card with no parent it branches instead, like T.
+    /// its parent. From a card with no parent it adds a thought instead, like T.
     func continueThread() {
-        guard let id = selection.first, let current = card(id) else { return branch() }
-        guard let parent = current.parent, videoID(for: id) == nil else { return branch() }
+        guard let id = selection.first, let current = card(id) else { return addThought() }
+        guard let parent = current.parent, videoID(for: id) == nil else { return addThought() }
         let frame = CGRect(x: current.frame.minX, y: current.frame.maxY + 24, width: current.frame.width, height: 130)
         let next = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
             $0.frame = frame
@@ -741,12 +741,12 @@ final class BoardStore {
     /// board. Each card's children form a column to its right, in their
     /// current top-to-bottom order; roots stay where they are unless a tidied
     /// tree would overlap other cards, in which case it moves down to clear them.
-    /// Only ever the selected branches: rearranging a whole board destroys a
+    /// Only ever the selected threads: rearranging a whole board destroys a
     /// spatial arrangement that means something to the user.
     @discardableResult
     func tidy(_ ids: Set<UUID>? = nil) -> Bool {
         let scope = ids ?? selection
-        // Tidy each selected card's branch, skipping cards inside another selected branch.
+        // Tidy each selected card's thread, skipping cards inside another selected one.
         var roots = Array(scope).filter { id in
             var cursor = card(id)?.parent
             var hops = 0
@@ -814,41 +814,41 @@ final class BoardStore {
         return current
     }
 
-    /// T: branch from whatever is selected: a sticky that follows from it. From a
-    /// video (or one of its branches) the branch is anchored at the current time; from any other card
+    /// T: a thought drawn out of whatever is selected: a sticky threaded from it.
+    /// On a video (or one of its thoughts) it starts with the current time; from any other card
     /// it's a connected sticky; with nothing selected, a free sticky.
-    func branch() {
+    func addThought() {
         guard let id = selection.first, card(id) != nil else {
             add(.sticky, at: insertionPoint, edit: true)
             return
         }
         if videoID(for: id) != nil {
-            branchAtCurrentTime(id)
+            addThoughtAtCurrentTime(id)
         } else {
-            placeBranch(from: id, body: "")
+            placeThought(from: id, body: "")
         }
     }
 
-    /// Branches from a video, anchored at the current playback time, and starts editing.
-    func branchAtCurrentTime(_ id: UUID) {
+    /// A thought on a video, starting with the current playback time, ready to type.
+    func addThoughtAtCurrentTime(_ id: UUID) {
         guard let videoID = videoID(for: id) else { return }
         video(videoID).currentTime { [weak self] t in
-            self?.placeBranch(from: videoID, body: "[\(Timestamp.format(t))] ")
+            self?.placeThought(from: videoID, body: "[\(Timestamp.format(t))] ")
         }
     }
 
     /// A sticky following from `origin`, stacked in a column to its right.
     /// Agents pass `interactive: false` so the user's selection and focus stay put.
     @discardableResult
-    func placeBranch(from origin: UUID, body: String, interactive: Bool = true) -> UUID? {
+    func placeThought(from origin: UUID, body: String, interactive: Bool = true) -> UUID? {
         guard let frame = columnSpot(beside: origin, size: CGSize(width: 220, height: 130)) else { return nil }
-        let branch = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY), select: interactive) {
+        let thought = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY), select: interactive) {
             $0.frame = frame
             $0.parent = origin
             $0.body = body
         }
-        if interactive { beginEditing(branch) }
-        return branch
+        if interactive { beginEditing(thought) }
+        return thought
     }
 
     /// The next free slot in the column to the right of a card.
