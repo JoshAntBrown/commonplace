@@ -64,7 +64,7 @@ each card is.
 
 - **Build trees, not scatter.** Give each new card the `parent` it grows out of, so related ideas
   form a thread. Several points from one source are siblings under it. After adding a batch, call
-  `tidy_thread` on the card you built from so the new branch is laid out cleanly. Never tidy the user's
+  `tidy_thread` on the card you built from so the new thread is laid out cleanly. Never tidy the user's
   existing arrangement unless they ask.
 - **Reference sparingly.** Draw only the strongest cross-links, usually one or two per card. If a
   card mostly belongs somewhere else, give it that parent instead of a long line across the board.
