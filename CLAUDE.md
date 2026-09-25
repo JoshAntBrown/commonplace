@@ -14,7 +14,7 @@ swift build             # compile only
 
 Swift Package (tools 5.10, Swift 5 language mode), macOS 14+, no Xcode project. The app bundle is
 assembled by `scripts/build-app.sh` from `Support/Info.plist` and ad-hoc signed. Quit the app
-before relaunching (`osascript -e 'tell application id "com.joshbrown.commonplace" to quit'`) so
+before relaunching (`osascript -e 'tell application id "com.joossh.commonplace" to quit'`) so
 it saves cleanly.
 
 ## Data

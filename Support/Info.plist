@@ -4,7 +4,7 @@
 <dict>
 	<key>CFBundleName</key><string>Commonplace</string>
 	<key>CFBundleDisplayName</key><string>Commonplace</string>
-	<key>CFBundleIdentifier</key><string>com.joshbrown.commonplace</string>
+	<key>CFBundleIdentifier</key><string>com.joossh.commonplace</string>
 	<key>CFBundleExecutable</key><string>Commonplace</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>0.1.0</string>
