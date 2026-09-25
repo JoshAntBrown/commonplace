@@ -30,7 +30,7 @@ Obsidian-friendly; add front-matter keys rather than inventing sidecar files. Te
 - `Models.swift`: `Card`, `CardKind`, `Connection`, `Place` breadboard metrics, `Timestamp`
 - `Storage.swift`: `Library` (boards on disk), `CardFile` front-matter encode/decode, seed board
 - `BoardStore.swift`: all board state and operations: add/update, drag/resize, connections,
-  thoughts & moments, clipping, undo/redo snapshots, autosave
+  branches and threads, clipping, undo/redo snapshots, autosave
 - `CanvasView.swift`: canvas, gestures, marquee, NSEvent monitors for keys/scroll/pinch,
   connection drawing, help overlay
 - `CardView.swift`: per-kind card rendering and editing
@@ -71,9 +71,11 @@ Obsidian-friendly; add front-matter keys rather than inventing sidecar files. Te
 - Structure-preserving (after Alexander): good interactions let a board grow piecemeal,
   strengthening what's there rather than forcing reorganisation. Drawing a thought out of a card
   is the model.
-- Two kinds of link: the sequence link (`Card.parent`, one per card, a tree) gives order and is
-  what layout, folding and reading follow; references (`Connection`) are the web across it and
-  stay quiet until focused. Don't blur them.
-- Everything is a first-class card that can be connected: moments and thoughts are stickies, not
+- Vocabulary (use it in UI, tools and docs): **card**; **thread** (the follows-from link,
+  `Card.parent`, one per card, a tree; gives order); **branch** (a card threaded from another, T);
+  **anchor** (where in its parent a branch points, e.g. a video timestamp); **reference** (see-also,
+  `Connection`, shown as chips and floating lists, not lines); **wire** (breadboard links, always
+  drawn). Don't reintroduce "moment", "thought" or "sequence" as names.
+- Everything is a first-class card that can be threaded or referenced: branches are stickies, not
   fields inside other cards.
 - Keyboard-first: every common action has a single-key shortcut on the canvas.

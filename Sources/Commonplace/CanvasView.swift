@@ -117,8 +117,8 @@ struct CanvasView: View {
                     Label("Image", systemImage: CardKind.image.symbol)
                 }.help("Add image (I)")
                 Button { store.startConnecting() } label: {
-                    Label("Connect", systemImage: "arrow.triangle.branch")
-                }.help("Connect selected card (C)").disabled(store.selection.isEmpty)
+                    Label("Reference", systemImage: "arrow.left.arrow.right")
+                }.help("Reference another card from the selection (C)").disabled(store.selection.isEmpty)
                 Button { showBrowser.toggle() } label: {
                     Label("Browser", systemImage: "globe")
                 }.help("Find things on the web (B)")
@@ -359,12 +359,12 @@ struct CanvasView: View {
         case "l": store.showLinkPrompt = true
         case "i": store.pickImages()
         case "c":
-            if flags.contains(.shift) { store.startSequenceLink() } else { store.startConnecting() }
+            if flags.contains(.shift) { store.startThreadLink() } else { store.startConnecting() }
         case "a": if !store.tidy() { NSSound.beep() }
         case "r": store.showAllReferences.toggle()
         case "p": store.add(.place, at: p, edit: true)
         case "t":
-            if flags.contains(.shift) { store.continueSequence() } else { store.addThought() }
+            if flags.contains(.shift) { store.continueThread() } else { store.branch() }
         case "[", "]":
             guard let id = store.selection.first, store.videoID(for: id) != nil else { return false }
             store.stepSpeed(id, up: key == "]")
@@ -433,7 +433,7 @@ enum Geometry {
 
     /// A smooth curve from a parent to a child, leaving the side that faces
     /// the child. Returns the path and where it meets the child.
-    static func sequencePath(from parent: CGRect, to child: CGRect, scale: CGFloat) -> (Path, CGPoint) {
+    static func threadPath(from parent: CGRect, to child: CGRect, scale: CGFloat) -> (Path, CGPoint) {
         let inset = 22 * scale
         var path = Path()
         let start: CGPoint, end: CGPoint, c1: CGPoint, c2: CGPoint
@@ -480,12 +480,12 @@ struct ConnectionsLayer: View {
             let chrome = min(store.scale, 1)
             let focus = store.focusedCards
 
-            // Sequence links: the tree that gives the board its order. Solid
+            // Threads: the tree that gives the board its order. Solid
             // and always shown, strongest for what you're focused on.
             for card in store.board.cards {
                 guard let parentID = card.parent, let parent = store.card(parentID) else { continue }
                 let related = focus.contains(card.id) || focus.contains(parentID)
-                let (path, end) = Geometry.sequencePath(from: store.toScreen(parent.frame),
+                let (path, end) = Geometry.threadPath(from: store.toScreen(parent.frame),
                                                         to: store.toScreen(card.frame), scale: store.scale)
                 let color: SwiftUI.Color = related ? theme.accent : theme.muted.opacity(0.7)
                 ctx.stroke(path, with: .color(color),
@@ -520,8 +520,8 @@ struct ConnectionsLayer: View {
                 path.move(to: start)
                 path.addLine(to: h)
                 ctx.stroke(path, with: .color(theme.accent),
-                           style: StrokeStyle(lineWidth: store.connectingSequence ? 2 : 1.5,
-                                              dash: store.connectingSequence ? [] : [5, 4]))
+                           style: StrokeStyle(lineWidth: store.connectingThread ? 2 : 1.5,
+                                              dash: store.connectingThread ? [] : [5, 4]))
             }
         }
     }
@@ -590,7 +590,7 @@ struct ConnectionHandle: View {
             }
             .help("Reference · click to select · double-click to label")
             .contextMenu {
-                Button("Make Sequence Link") { store.makeSequence(connection.id) }
+                Button("Make Thread") { store.makeThread(connection.id) }
                 Button("Label…") {
                     store.selectedConnection = connection.id
                     store.editingConnection = connection.id
@@ -621,7 +621,7 @@ struct StatusBar: View {
         HStack(spacing: 12) {
             Text("\(Int((store.scale * 100).rounded()))%")
             if store.connectingFrom != nil {
-                Text(store.connectingSequence ? "Sequence — click the card that follows from this · Esc to cancel"
+                Text(store.connectingThread ? "Thread — click the card that follows from this · Esc to cancel"
                                               : "Reference — click a card · Esc to cancel")
                     .foregroundStyle(theme.accent)
             } else {
@@ -643,10 +643,10 @@ struct HelpOverlay: View {
     private let rows: [(String, String)] = [
         ("S", "New sticky"), ("N", "New note"), ("L", "Add link or video"), ("I", "Add image"),
         ("⌘V", "Paste URL, image or text"), ("Double-click", "Sticky on canvas / edit card"),
-        ("C · ⇧C", "Reference → click target · sequence link → click what follows"), ("P", "New breadboard place"),
+        ("C · ⇧C", "Reference → click target · thread → click what follows"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
-        ("Affordance dot", "Connect that affordance → click a place"), ("T · ⇧T", "Branch a thought from the selection · continue its sequence"),
-        ("A", "Tidy the selected branch"),
+        ("Affordance dot", "Connect that affordance → click a place"), ("T · ⇧T", "Branch from the selection (on a video, at the current time) · continue its thread"),
+        ("A", "Tidy the selected thread"),
         ("R", "Show every reference as a line"),
         ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
@@ -842,7 +842,7 @@ struct ReferenceHalo: View {
         }
         .contextMenu {
             Button("Go to Card") { store.reveal(e.ref.other, animated: true) }
-            Button("Make Sequence Link") { store.makeSequence(e.ref.id) }
+            Button("Make Thread") { store.makeThread(e.ref.id) }
             Divider()
             Button("Remove Reference", role: .destructive) {
                 store.highlight = nil

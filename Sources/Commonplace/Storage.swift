@@ -237,7 +237,7 @@ enum Seed {
         A canvas for collecting references, snippets and notes, and connecting them.
 
         - Paste a **YouTube** or **X** link to get a playable video card
-        - Press **T** on a selected video to note the current moment
+        - Press **T** on a video to branch a note anchored at the current time
         - Everything is saved as Markdown in `~/Commonplace`
         """
         welcome.frame = CGRect(x: 0, y: 0, width: 340, height: 260)
@@ -250,7 +250,7 @@ enum Seed {
         - **L** link or video · **I** image
         - **⌘V** paste a URL, image or text
         - **C** connect, then click a card
-        - **T** timestamp on a video
+        - **T** branch · **⇧T** continue
         - **1–6** colour · **7** clear
         - **Return** edit · **Esc** done
         - **F** fit · **0** 100% · **?** help

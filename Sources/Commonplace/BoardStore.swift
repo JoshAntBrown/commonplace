@@ -17,8 +17,8 @@ final class BoardStore {
     var connectingFrom: UUID?
     /// Affordance the pending connection starts from, when connecting from a place.
     var connectingItem: String?
-    /// The pending link is a sequence link: the card clicked next follows from `connectingFrom`.
-    var connectingSequence = false
+    /// The pending link is a thread: the card clicked next follows from `connectingFrom`.
+    var connectingThread = false
     /// Pointer location in canvas coordinates.
     var hover: CGPoint?
     var showHelp = false
@@ -54,7 +54,7 @@ final class BoardStore {
     /// Consecutive checkpoints with the same key (typing in one editing
     /// session) collapse into one undo step.
     @ObservationIgnored private var lastCheckpointKey: String?
-    /// Several changes in one run-loop turn (e.g. a moment's sticky and its
+    /// Several changes in one run-loop turn (e.g. a branch's card and its
     /// arrow) are one undo step.
     @ObservationIgnored private var checkpointedThisTurn = false
     @ObservationIgnored private var editSession = 0
@@ -74,7 +74,7 @@ final class BoardStore {
         offset = CGPoint(x: board.viewport.x, y: board.viewport.y)
         scale = board.viewport.scale
         for i in self.board.cards.indices { fitHeight(&self.board.cards[i]) }
-        migrateSequenceLinks()
+        migrateThreads()
         terminateObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.saveNow() }
@@ -405,7 +405,7 @@ final class BoardStore {
         editingConnection = nil
         connectingFrom = nil
         connectingItem = nil
-        connectingSequence = false
+        connectingThread = false
     }
 
     /// Re-fits a place card's height, e.g. when editing starts or ends.
@@ -439,7 +439,7 @@ final class BoardStore {
         pendingTyping = ""
         selection = [id]
         selectedConnection = nil
-        // A plain video card has nothing to edit; its notes are moment stickies.
+        // A plain video card has nothing to edit; its notes are branches.
         if let card = card(id), card.kind == .video, card.body.isEmpty { return }
         editing = id
     }
@@ -472,14 +472,14 @@ final class BoardStore {
             window.makeFirstResponder(nil)
         }
         if let from = connectingFrom {
-            if connectingSequence {
+            if connectingThread {
                 if !setParent(id, from) { NSSound.beep() }
             } else {
                 connect(from, id, item: connectingItem)
             }
             connectingFrom = nil
             connectingItem = nil
-            connectingSequence = false
+            connectingThread = false
             dragOrigins = [:]
             return
         }
@@ -544,7 +544,7 @@ final class BoardStore {
         selection = [id]
         connectingFrom = id
         connectingItem = item
-        connectingSequence = false
+        connectingThread = false
     }
 
     @discardableResult
@@ -643,7 +643,7 @@ final class BoardStore {
         }
     }
 
-    /// The video a card belongs to: itself, or the video a moment marks.
+    /// The video a card belongs to: itself, or the video a branch is anchored in.
     func videoID(for id: UUID) -> UUID? {
         guard let card = card(id) else { return nil }
         if card.kind == .video { return id }
@@ -651,7 +651,7 @@ final class BoardStore {
         return v
     }
 
-    // MARK: Sequence links
+    // MARK: Threads
 
     func children(of id: UUID) -> [Card] {
         board.cards.filter { $0.parent == id }
@@ -690,21 +690,21 @@ final class BoardStore {
     }
 
     /// ⇧C: the next card clicked will follow from the selected one.
-    func startSequenceLink() {
+    func startThreadLink() {
         guard let id = selection.first else { return }
         editing = nil
         connectingFrom = id
         connectingItem = nil
-        connectingSequence = true
+        connectingThread = true
     }
 
-    /// A reference becomes a sequence link: its target now follows from its source.
-    func makeSequence(_ connectionID: UUID) {
+    /// A reference becomes a thread: its target now follows from its source.
+    func makeThread(_ connectionID: UUID) {
         guard let c = board.connections.first(where: { $0.id == connectionID }) else { return }
         if !setParent(c.to, c.from) { NSSound.beep() }
     }
 
-    /// A sequence link becomes a reference: the card leaves the sequence but
+    /// A thread becomes a reference: the card leaves the thread but
     /// keeps an arrow from what it came from.
     func makeReference(_ child: UUID) {
         guard let parent = card(child)?.parent else { return }
@@ -713,9 +713,9 @@ final class BoardStore {
         connect(parent, child, select: false)
     }
 
-    /// Thoughts used to carry both a parent and an arrow to it; the parent is
-    /// now drawn as the sequence link, so the duplicate arrow goes.
-    private func migrateSequenceLinks() {
+    /// Branches used to carry both a parent and an arrow to it; the parent is
+    /// now drawn as the thread, so the duplicate arrow goes.
+    private func migrateThreads() {
         let parents = Dictionary(board.cards.compactMap { c in c.parent.map { (c.id, $0) } }, uniquingKeysWith: { a, _ in a })
         let before = board.connections.count
         board.connections.removeAll { c in
@@ -724,11 +724,11 @@ final class BoardStore {
         if board.connections.count != before { scheduleSave() }
     }
 
-    /// ⇧T: continue the sequence — a new card after the selected one, sharing
+    /// ⇧T: continue the thread — a new card after the selected one, sharing
     /// its parent. From a card with no parent it branches instead, like T.
-    func continueSequence() {
-        guard let id = selection.first, let current = card(id) else { return addThought() }
-        guard let parent = current.parent, videoID(for: id) == nil else { return addThought() }
+    func continueThread() {
+        guard let id = selection.first, let current = card(id) else { return branch() }
+        guard let parent = current.parent, videoID(for: id) == nil else { return branch() }
         let frame = CGRect(x: current.frame.minX, y: current.frame.maxY + 24, width: current.frame.width, height: 130)
         let next = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
             $0.frame = frame
@@ -814,41 +814,41 @@ final class BoardStore {
         return current
     }
 
-    /// T: draw a thought out of whatever is selected. From a video (or one
-    /// of its moments) it's a moment at the current time; from any other card
+    /// T: branch from whatever is selected: a sticky that follows from it. From a
+    /// video (or one of its branches) the branch is anchored at the current time; from any other card
     /// it's a connected sticky; with nothing selected, a free sticky.
-    func addThought() {
+    func branch() {
         guard let id = selection.first, card(id) != nil else {
             add(.sticky, at: insertionPoint, edit: true)
             return
         }
         if videoID(for: id) != nil {
-            addMoment(id)
+            branchAtCurrentTime(id)
         } else {
-            placeThought(from: id, body: "")
+            placeBranch(from: id, body: "")
         }
     }
 
-    /// Adds a sticky for the video's current moment and starts editing it.
-    func addMoment(_ id: UUID) {
+    /// Branches from a video, anchored at the current playback time, and starts editing.
+    func branchAtCurrentTime(_ id: UUID) {
         guard let videoID = videoID(for: id) else { return }
         video(videoID).currentTime { [weak self] t in
-            self?.placeThought(from: videoID, body: "[\(Timestamp.format(t))] ")
+            self?.placeBranch(from: videoID, body: "[\(Timestamp.format(t))] ")
         }
     }
 
     /// A sticky following from `origin`, stacked in a column to its right.
     /// Agents pass `interactive: false` so the user's selection and focus stay put.
     @discardableResult
-    func placeThought(from origin: UUID, body: String, interactive: Bool = true) -> UUID? {
+    func placeBranch(from origin: UUID, body: String, interactive: Bool = true) -> UUID? {
         guard let frame = columnSpot(beside: origin, size: CGSize(width: 220, height: 130)) else { return nil }
-        let thought = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY), select: interactive) {
+        let branch = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY), select: interactive) {
             $0.frame = frame
             $0.parent = origin
             $0.body = body
         }
-        if interactive { beginEditing(thought) }
-        return thought
+        if interactive { beginEditing(branch) }
+        return branch
     }
 
     /// The next free slot in the column to the right of a card.

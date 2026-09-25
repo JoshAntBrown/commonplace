@@ -60,13 +60,13 @@ struct CardView: View {
             .onChange(of: resizing) { _, active in if !active { store.endResize() } }
             .onChange(of: isEditing) { _, _ in if card.kind == .place { store.fitPlace(card.id) } }
             .contextMenu {
-                Button("Branch a Thought") { store.selection = [card.id]; store.addThought() }
-                Button("Link What Follows…") { store.selection = [card.id]; store.startSequenceLink() }
-                Button("Tidy Tree") { store.tidy([card.id]) }
+                Button("Branch") { store.selection = [card.id]; store.branch() }
+                Button("Thread a Card After This…") { store.selection = [card.id]; store.startThreadLink() }
+                Button("Tidy Thread") { store.tidy([card.id]) }
                 if card.parent != nil {
                     Divider()
-                    Button("Make Sequence Link a Reference") { store.makeReference(card.id) }
-                    Button("Detach from Sequence") { store.setParent(card.id, nil) }
+                    Button("Turn Thread into Reference") { store.makeReference(card.id) }
+                    Button("Detach from Thread") { store.setParent(card.id, nil) }
                 }
             }
     }
@@ -396,14 +396,14 @@ struct CardView: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help("Playback speed: click to speed up, hold for all speeds ([ and ])")
-                Button { store.addMoment(card.id) } label: {
+                Button { store.branchAtCurrentTime(card.id) } label: {
                     HStack(spacing: 3 * c) {
                         Image(systemName: "plus")
-                        Text("Moment")
+                        Text("Branch")
                     }
                 }
                 .buttonStyle(.plain)
-                .help("Add a sticky for this moment (T)")
+                .help("Branch here, anchored at the current time (T)")
                 openButton
             }
             Group {
@@ -420,7 +420,7 @@ struct CardView: View {
             }
             .frame(height: playerHeight)
             .onAppear { store.resolveMedia(card.id) }
-            // Older boards kept moments in the card; still show them.
+            // Older boards kept timestamped notes inside the card; still show them.
             if isEditing {
                 notes.padding(12 * s)
             } else if !card.body.isEmpty {
@@ -573,7 +573,7 @@ struct CardTextEditor: View {
     }
 
     /// Once the text view has focus, put the cursor after any existing text
-    /// (e.g. a moment's timestamp) and insert anything typed in the meantime.
+    /// (e.g. a branch's timestamp anchor) and insert anything typed in the meantime.
     private func prepare(attempt: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0 : 0.03)) {
             guard let tv = NSApp.keyWindow?.firstResponder as? NSTextView else {

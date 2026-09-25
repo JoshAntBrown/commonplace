@@ -20,15 +20,15 @@ final class MCPTools {
     static let instructions = """
     Commonplace is the user's thinking canvas: boards of cards (sticky, note, link, video, image, \
     place). It's a space for exploring ideas, not a document to tidy.
-    Two kinds of link: a card's `parent` is its sequence link, the card it follows from or forms part \
+    Two kinds of link: a card's `parent` is its thread, the card it follows from or forms part \
     of (one parent each, so the board has a tree that can be tidied and read in order); connections \
     are references, "this relates to that", anywhere on the board. Use parent for elaboration and \
     continuation, connect for everything else.
-    - Add rather than rewrite. Draw a thought out of a card with add_thought; on a video it becomes \
-    a timestamped moment. Leave the user's own words alone unless they ask you to change them.
+    - Add rather than rewrite. Respond to a card with `branch`; on a video the branch is anchored at a \
+    timestamp. Leave the user's own words alone unless they ask you to change them.
     - Don't delete the user's cards unless they ask.
     - Bring sources in with clip_url so where things came from is kept.
-    - Keep the board calm: put new cards beside what they relate to (near=<card id>), connect only \
+    - Keep the board calm: put new cards beside what they relate to (near=<card id>, or parent= to thread it), connect only \
     the strongest relationships (one or two per card), keep labels to a few words, and prefer one \
     note with a list over many stickies.
     - Omit `board` to use the board on screen. Card ids can be given as a unique prefix.
@@ -64,23 +64,23 @@ final class MCPTools {
              required: ["query"], readOnly: true),
         tool("get_selection", "The cards the user has selected on screen right now: what they're looking at.",
              readOnly: true),
-        tool("get_video_moments",
-             "A video card's moments (timestamped stickies) in time order, and the current playback position.",
+        tool("get_video_branches",
+             "A video card's branches in time order (each anchored at a timestamp), and the current playback position.",
              ["card_id": cardArg, "board": boardArg], required: ["card_id"], readOnly: true),
         tool("add_card", "Add a sticky, note or breadboard place. Use clip_url for links, videos and images. Give `parent` when the card follows from or elaborates another.",
              ["kind": ["type": "string", "enum": ["sticky", "note", "place"]],
               "title": ["type": "string", "description": "Note title or place name."],
               "body": ["type": "string", "description": "Markdown text. For a place: one affordance per line."],
               "color": ["type": "string", "enum": colors],
-              "parent": ["type": "string", "description": "Card id this follows from (sequence link); it's placed in that card's column."],
-              "near": ["type": "string", "description": "Card id to place this beside, without a sequence link."],
+              "parent": ["type": "string", "description": "Card id this follows from (its thread); it's placed in that card's column."],
+              "near": ["type": "string", "description": "Card id to place this beside, without a thread."],
               "connect_from": ["type": "string", "description": "Card id to draw a reference from to the new card."],
               "x": ["type": "number"], "y": ["type": "number"], "board": boardArg],
              required: ["kind"], readOnly: false),
-        tool("add_thought",
-             "Draw a thought out of a card: a sticky that follows from it (its parent), placed beside it. On a video (or one of its moments) it's a moment; the timestamp defaults to the current playback position.",
+        tool("branch",
+             "Branch from a card: a sticky that follows from it (threaded to it), placed beside it. From a video (or one of its branches) the branch is anchored at a timestamp, defaulting to the current playback position.",
              ["card_id": cardArg, "body": ["type": "string"],
-              "timestamp": ["type": "number", "description": "Seconds into the video, for moments."],
+              "timestamp": ["type": "number", "description": "For videos: the anchor, in seconds into the video."],
               "board": boardArg],
              required: ["card_id", "body"], readOnly: false),
         tool("update_card", "Change a card's text, colour, position or size. Prefer `append` to keep the user's words.",
@@ -90,7 +90,7 @@ final class MCPTools {
               "x": ["type": "number"], "y": ["type": "number"], "width": ["type": "number"], "height": ["type": "number"],
               "board": boardArg],
              required: ["card_id"], readOnly: false),
-        tool("connect", "Add a reference between two cards (this relates to that), optionally labelled with why. For 'follows from / part of', use set_parent instead.",
+        tool("add_reference", "Add a reference between two cards (this relates to that), optionally labelled with why. For 'follows from / part of', use set_thread instead.",
              ["from": cardArg, "to": cardArg, "label": ["type": "string"],
               "from_affordance": ["type": "string", "description": "For a place card: the affordance line the arrow starts from."],
               "board": boardArg],
@@ -100,12 +100,12 @@ final class MCPTools {
              ["url": ["type": "string"], "near": ["type": "string", "description": "Card id to place this beside."],
               "board": boardArg],
              required: ["url"], readOnly: false),
-        tool("set_parent",
-             "Set a card's sequence link: the card it follows from or forms part of. Replaces any reference between the two; an old parent is kept as a reference. Pass parent_id null to detach.",
+        tool("set_thread",
+             "Set a card's thread: the card it follows from or forms part of. Replaces any reference between the two; an old parent is kept as a reference. Pass parent_id null to detach.",
              ["card_id": cardArg, "parent_id": ["type": ["string", "null"], "description": "Card id, or null to detach."],
               "board": boardArg],
              required: ["card_id", "parent_id"], readOnly: false),
-        tool("tidy",
+        tool("tidy_thread",
              "Lay out one branch neatly: the card's children in a column to its right, in order, and theirs beside them. Only use it on branches you've just built or when asked; the user's own arrangement means something. Undoable.",
              ["card_id": ["type": "string", "description": "The card whose branch to tidy."], "board": boardArg],
              required: ["card_id"], readOnly: false),
@@ -129,14 +129,14 @@ final class MCPTools {
             case "get_card": done(.success(try getCard(a)))
             case "search": done(.success(try search(a)))
             case "get_selection": done(.success(getSelection()))
-            case "get_video_moments": try getVideoMoments(a, done: done)
+            case "get_video_branches": try getVideoBranches(a, done: done)
             case "add_card": done(.success(try addCard(a)))
-            case "add_thought": try addThought(a, done: done)
+            case "branch": try branch(a, done: done)
             case "update_card": done(.success(try updateCard(a)))
-            case "connect": done(.success(try connect(a)))
+            case "add_reference": done(.success(try connect(a)))
             case "clip_url": done(.success(try clipURL(a)))
-            case "set_parent": done(.success(try setParent(a)))
-            case "tidy": done(.success(try tidy(a)))
+            case "set_thread": done(.success(try setParent(a)))
+            case "tidy_thread": done(.success(try tidy(a)))
             case "delete_card": done(.success(try deleteCard(a)))
             case "create_board": done(.success(try createBoard(a)))
             case "focus_card": done(.success(try focusCard(a)))
@@ -203,13 +203,13 @@ final class MCPTools {
                 "visible_area": ["x": Int(a.x), "y": Int(a.y), "width": Int(b.x - a.x), "height": Int(b.y - a.y)]]
     }
 
-    private func getVideoMoments(_ a: [String: Any], done: @escaping Reply) throws {
+    private func getVideoBranches(_ a: [String: Any], done: @escaping Reply) throws {
         let store = try self.store(a)
         let id = try cardID(a["card_id"], in: store)
         guard let videoID = store.videoID(for: id), let video = store.card(videoID) else {
-            throw ToolError("That card isn't a video or one of its moments.")
+            throw ToolError("That card isn't a video or one of its branches.")
         }
-        let moments = store.board.cards
+        let branches = store.board.cards
             .filter { $0.parent == videoID }
             .map { card -> (Double, [String: Any]) in
                 let seconds = MarkdownText.timestamp(card.body.components(separatedBy: "\n").first ?? "")?.seconds
@@ -218,7 +218,7 @@ final class MCPTools {
             .sorted { $0.0 < $1.0 }
             .map(\.1)
         store.video(videoID).currentTime { t in
-            done(.success(["video": Self.json(video, full: true), "moments": moments, "current_time": t]))
+            done(.success(["video": Self.json(video, full: true), "branches": branches, "current_time": t]))
         }
     }
 
@@ -252,15 +252,15 @@ final class MCPTools {
         return try cardResult(id, in: store)
     }
 
-    private func addThought(_ a: [String: Any], done: @escaping Reply) throws {
+    private func branch(_ a: [String: Any], done: @escaping Reply) throws {
         let store = try self.store(a)
         let id = try cardID(a["card_id"], in: store)
         guard let body = a["body"] as? String, !body.isEmpty else { throw ToolError("`body` is required.") }
         let place = { (prefix: String, origin: UUID) in
-            guard let thought = store.placeThought(from: origin, body: prefix + body, interactive: false) else {
-                return done(.failure(ToolError("Couldn't place the thought.")))
+            guard let branch = store.placeBranch(from: origin, body: prefix + body, interactive: false) else {
+                return done(.failure(ToolError("Couldn't place the branch.")))
             }
-            do { done(.success(try self.cardResult(thought, in: store))) } catch { done(.failure(ToolError("\(error)"))) }
+            do { done(.success(try self.cardResult(branch, in: store))) } catch { done(.failure(ToolError("\(error)"))) }
         }
         guard let videoID = store.videoID(for: id) else { return place("", id) }
         if let t = Self.number(a["timestamp"]) {

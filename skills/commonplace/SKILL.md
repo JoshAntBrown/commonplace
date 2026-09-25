@@ -1,6 +1,6 @@
 ---
 name: commonplace
-description: Work with the user's Commonplace boards (their visual thinking canvas of stickies, notes, links, videos, images and breadboards) through the commonplace MCP tools. Use when the user mentions Commonplace, their board or canvas, cards, stickies, moments on a video, or asks you to find, add, connect, summarise or explore ideas on a board.
+description: Work with the user's Commonplace boards (their visual thinking canvas of stickies, notes, links, videos, images and breadboards) through the commonplace MCP tools. Use when the user mentions Commonplace, their board or canvas, cards, stickies, notes on a video, threads, or asks you to find, add, connect, summarise or explore ideas on a board.
 ---
 
 # Commonplace
@@ -12,38 +12,40 @@ to keep tidy. Treat it the way you'd treat someone's notebook: add to it, don't 
 Card kinds:
 - **sticky**: a quick thought. Stickies can stay stickies forever; don't "process" them.
 - **note**: a longer, titled Markdown note.
-- **link / video / image**: references, usually with a `source`. Videos are YouTube or X posts.
+- **link / video / image**: references to outside material, usually with a `source`. Videos are
+  YouTube or X posts.
 - **place**: a Shape Up breadboard place. `title` is the place, each `body` line an affordance.
-  Connections can start from one affordance (`from_affordance`).
 
-There are two kinds of link, and the difference matters (it comes from Luhmann's Zettelkasten and
-Alexander's pattern languages):
+## Vocabulary
 
-- **Sequence link: `parent`.** The card this one follows from, elaborates or forms part of. Each
-  card has at most one parent, so a board is a set of trees. The trees give a board its order:
-  they're drawn as solid lines, tidied into columns and read in sequence. Set with `parent` on
-  `add_card`, `add_thought`, or `set_parent`.
-- **Reference: a connection.** "This relates to that", between any two cards, anywhere. Shown as
-  a chip on the card and as a floating list beside the card the user has selected, not as lines.
-  Made with `connect`.
-- **Breadboard wires** are the exception: a connection from a place's affordance
-  (`from_affordance`), or between two places, is part of the diagram ("this leads there"). Wires are
-  always drawn and aren't references.
+Commonplace uses a small, fixed vocabulary. Use these words with the user too.
 
-Use a parent when a card grows out of another (a point from a talk, a consequence, a sub-part, the
-next step). Use a reference for everything else (supports, contradicts, example of, same idea as).
-When in doubt, a card has one natural parent and any number of references.
+- **Thread**: the "follows from" link. A card's `parent` is the card it follows from, elaborates or
+  forms part of. One parent per card, so a board is a set of trees; threads give it its order.
+  They're drawn as solid curves and can be tidied into columns (`tidy_thread`). Set with `parent`
+  on `add_card`, with `branch`, or with `set_thread`.
+- **Branch**: a new card threaded from another (the user presses T). Use `branch` to respond to a
+  card. Several points from one source are sibling branches under it.
+- **Anchor**: where in its parent a branch points. For a video it's a timestamp at the start of the
+  body, like `[12:34]`, which seeks the video when clicked. `branch` on a video anchors at the
+  current playback time unless you pass `timestamp`.
+- **Reference**: "see also", between any two cards anywhere. Shown as a chip on the card and as a
+  floating list beside the selected card, not as lines. Made with `add_reference`, labelled with
+  why ("supports", "in tension with", "example of").
+- **Wire**: a breadboard link from a place's affordance (`from_affordance`) to a place. Wires are the
+  diagram, always drawn, and aren't references.
 
-A **thought** is a sticky that follows from another card (`add_thought`). A thought on a video is
-a **moment**: its body starts with a timestamp like `[12:34]` that seeks the video when clicked.
+Use a thread when a card grows out of another (a point from a talk, a consequence, a sub-part, the
+next step). Use a reference for everything else. A card has one natural parent and any number of
+references.
 
 ## Working on a board
 
 1. **Look before you act.** Call `get_selection` first: what the user has selected is almost
    always what they mean by "this". Use `get_board` or `search` for the wider context.
 2. **Add, don't rewrite.** Put your contribution in new cards:
-   - Respond to a card with `add_thought`, which places a sticky that follows from it.
-   - Use `add_card` with `parent` when a card elaborates another, or `near` plus `connect` for a
+   - Respond to a card with `branch`, which places a sticky threaded from it.
+   - Use `add_card` with `parent` when a card elaborates another, or `near` plus `add_reference` for a
      looser relationship.
    - When you do change a card, prefer `update_card` with `append` over replacing the text.
 3. **Keep the user's words.** Don't reword, merge or delete their cards unless they ask.
@@ -63,7 +65,7 @@ each card is.
 
 - **Build trees, not scatter.** Give each new card the `parent` it grows out of, so related ideas
   form a branch. Several points from one source are siblings under it. After adding a batch, call
-  `tidy` on the card you built from so the new branch is laid out cleanly. Never tidy the user's
+  `tidy_thread` on the card you built from so the new branch is laid out cleanly. Never tidy the user's
   existing arrangement unless they ask.
 - **Reference sparingly.** Draw only the strongest cross-links, usually one or two per card. If a
   card mostly belongs somewhere else, give it that parent instead of a long line across the board.
@@ -76,13 +78,13 @@ each card is.
 
 ## Recipes
 
-- **Summarise a talk from its moments:** `get_video_moments` on the video, then write one note
-  with the video as its `parent` that pulls the moments together, citing timestamps like `[12:34]`.
-- **Find related ideas:** `search` across all boards for the key terms, then `connect` genuinely
+- **Summarise a talk from its branches:** `get_video_branches` on the video, then write one note
+  threaded from the video (`parent`) that pulls the branches together, citing timestamps like `[12:34]`.
+- **Find related ideas:** `search` across all boards for the key terms, then `add_reference` genuinely
   related cards on the same board, with a label. Mention relevant cards on other boards in your
   reply rather than copying them over.
 - **Research a concept:** find good sources on the web, `clip_url` the best one or two near the
-  relevant card, and add a short `add_thought` explaining why each matters.
+  relevant card, and add a short `branch` explaining why each matters.
 
 ## Tips
 

@@ -58,11 +58,11 @@ struct Card: Identifiable, Equatable {
     var media: String?
     /// The page this card was clipped from.
     var source: String?
-    /// The sequence link: the card this one follows from (Luhmann's
+    /// The thread: the card this one follows from (Luhmann's
     /// Folgezettel; the larger pattern it helps complete). One parent per card
     /// gives the board a tree, which is what can be tidied and read in order.
     /// Everything else is a reference (`Connection`). A child of a video is a
-    /// moment, and its timestamp seeks that video.
+    /// branch anchored in it: a leading timestamp seeks that video.
     var parent: UUID?
     /// Playback speed for a video card.
     var speed: Double = 1
@@ -77,13 +77,13 @@ struct Card: Identifiable, Equatable {
     static let headerHeight: CGFloat = 30
     static let speeds: [Double] = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3]
 
-    /// A video card is its header plus a 16:9 player; moments live in stickies.
+    /// A video card is its header plus a 16:9 player; notes on it are branches.
     static func videoHeight(width: CGFloat) -> CGFloat { headerHeight + width * 9 / 16 }
 }
 
 extension Card {
     /// A one-line name for the card: its title, or the first line of its text
-    /// with the Markdown stripped (a moment keeps its timestamp).
+    /// with the Markdown stripped (a timestamp anchor is kept).
     var headline: String {
         if !title.isEmpty { return title }
         let line = body.components(separatedBy: "\n")

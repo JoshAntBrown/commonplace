@@ -22,17 +22,20 @@ Everything lives in `~/Commonplace/<Board>/`:
 
 Markdown files dropped into `cards/` by hand appear on the board on next open.
 
-## Two kinds of link
+## Vocabulary
 
-- **Sequence links** (`parent:` in front-matter): the card this one follows from or forms part of.
-  One parent per card, so a board is a set of trees, drawn as solid curves. **T** branches a new
-  thought from the selection, **⇧T** continues its sequence, **⇧C** then a click makes that card
-  follow from the selection. **A** tidies the selection's tree (or every tree) into columns.
-- **References** (connections in `board.json`): "this relates to that", drawn dashed and quiet
-  until you focus a card. **C** then a click. Right-click converts between the two.
+- **Card**: anything on a board (sticky, note, link, video, image, place).
+- **Thread**: the "follows from" link (`parent:` in front-matter). One per card, so a board is a set
+  of trees, drawn as solid curves. **A** tidies the selected thread into columns.
+- **Branch** (**T**): a new card threaded from the selection. **Continue** (**⇧T**): the next card in
+  the same thread. **⇧C** then a click threads that card after the selection.
+- **Anchor**: where in its parent a branch points; for a video, a timestamp that seeks it.
+- **Reference** (**C** then a click): "see also". Shown as a chip on the card and a floating list
+  beside the selected card, not as lines (**R** draws them all). Right-click converts to a thread.
+- **Wire**: a breadboard link from a place's affordance to a place; always drawn.
 
-Deleting a card moves its children up to its parent. Older boards' `thought-of` / `moment-of`
-keys load as `parent`.
+Deleting a card moves its children up to its parent. Older `thought-of` / `moment-of` keys load as
+`parent`.
 
 ## Browser
 
@@ -53,9 +56,8 @@ affordance. Connections remember which affordance they start from (`fromItem` in
 - X posts: the MP4 behind the post is resolved and played natively (AVKit).
 - Vimeo and other pages: loaded in a web view.
 
-Press **T** (or **+ Moment**) on a selected video to add a moment: a sticky stamped with the
-current time, stacked beside the video and connected to it. Click its timestamp to jump back;
-connect it to anything else like any other card.
+Press **T** (or **+ Branch**) on a selected video to branch a note anchored at the current time:
+a sticky stamped with the timestamp, threaded from the video. Click the timestamp to jump back.
 
 Click **1×** in a video's title bar to step through speeds (hold for the full list), or use **[** and **]**.
 Each video remembers its speed and where you left off (`speed:` and `position:` in its front-matter).
@@ -73,7 +75,8 @@ requests from web pages.
   Install Skill for Claude Code puts the skill in `~/.claude/skills/commonplace`.
 - The skill lives in `skills/commonplace/SKILL.md` and ships inside the app bundle.
 
-Tools: list_boards, get_board, get_card, search, get_selection, get_video_moments, add_card,
-add_thought, update_card, connect, clip_url, delete_card, create_board, focus_card.
+Tools: list_boards, get_board, get_card, search, get_selection, get_video_branches, add_card,
+branch, update_card, add_reference, set_thread, tidy_thread, clip_url, delete_card, create_board,
+focus_card.
 
 Files edited outside the app (another editor, a script) are picked up and reloaded.
