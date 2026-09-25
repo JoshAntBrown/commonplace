@@ -106,7 +106,7 @@ final class MCPTools {
               "board": boardArg],
              required: ["card_id", "parent_id"], readOnly: false),
         tool("tidy_thread",
-             "Line up a card's thoughts in a column to its right, in order (one level; deeper thoughts move with their parent). Only use it on threads you've just built or when asked; the user's own arrangement means something. Undoable.",
+             "Line up a card's thoughts in a column to its right, in order (one level only; their own thoughts stay where they are). Only use it on threads you've just built or when asked; the user's own arrangement means something. Undoable.",
              ["card_id": ["type": "string", "description": "The card whose thread to tidy."], "board": boardArg],
              required: ["card_id"], readOnly: false),
         tool("delete_card", "Remove a card and its connections. Only when the user asks; it can be undone with ⌘Z.",

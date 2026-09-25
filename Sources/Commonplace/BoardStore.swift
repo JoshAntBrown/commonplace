@@ -867,26 +867,19 @@ final class BoardStore {
             .mapValues { $0.sorted { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }.map(\.id) }
         let gapX: CGFloat = 80, gapY: CGFloat = 24
 
-        func members(_ id: UUID, depth: Int = 0) -> [UUID] {
-            depth > 64 ? [id] : [id] + (childMap[id] ?? []).flatMap { members($0, depth: depth + 1) }
-        }
-
-        // One level: the card's own thoughts form a column to its right, in
-        // their current order. Each moves together with everything that
-        // follows from it, so deeper arrangements are left as they were.
+        // One level only: the card's own thoughts form a column to its right,
+        // in their current order, spaced by their own size. Anything that
+        // follows from them stays exactly where it is.
         var tidied = Set<UUID>()
         for root in roots {
             guard let rootFrame = frames[root] else { continue }
-            let x = rootFrame.maxX + gapX
             var y = rootFrame.minY
             for child in childMap[root] ?? [] {
-                let group = members(child)
-                let box = group.compactMap { frames[$0] }.reduce(CGRect.null) { $0.union($1) }
-                guard let childFrame = frames[child], !box.isNull else { continue }
-                let dx = x - childFrame.minX, dy = y - box.minY
-                for m in group { frames[m] = frames[m]?.offsetBy(dx: dx, dy: dy) }
-                tidied.formUnion(group)
-                y = box.maxY + dy + gapY
+                guard var f = frames[child] else { continue }
+                f.origin = CGPoint(x: rootFrame.maxX + gapX, y: y)
+                frames[child] = f
+                tidied.insert(child)
+                y = f.maxY + gapY
             }
         }
         withAnimation(.easeInOut(duration: 0.35)) {
