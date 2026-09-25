@@ -502,12 +502,14 @@ struct ConnectionsLayer: View {
                 // the rest recede; with no focus, all lines stay quiet.
                 let related = store.selection.contains(c.from) || store.selection.contains(c.to)
                     || store.selectedConnection == c.id
-                let color: SwiftUI.Color = related ? theme.accent : theme.muted.opacity(0.5)
-                let width = max(1, (related ? 1.8 : 1.2) * chrome)
+                let wire = store.isWire(c)
+                let color: SwiftUI.Color = related ? theme.accent : theme.muted.opacity(wire ? 0.85 : 0.5)
+                let width = max(1, (related ? 1.8 : wire ? 1.5 : 1.2) * chrome)
                 var path = Path()
                 path.move(to: p1)
                 path.addLine(to: p2)
-                let dash = [max(3, 6 * chrome), max(2, 4 * chrome)]
+                // Breadboard wires are the diagram: solid. References: dashed.
+                let dash: [CGFloat] = wire ? [] : [max(3, 6 * chrome), max(2, 4 * chrome)]
                 ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, dash: dash))
                 ctx.fill(Geometry.arrowhead(at: p2, from: p1, size: max(6, 10 * chrome)), with: .color(color))
             }
@@ -540,7 +542,7 @@ struct ConnectionHandle: View {
             let related = selected || focus.contains(connection.from) || focus.contains(connection.to)
             let detailed = store.scale >= BoardStore.detailZoom
             let editing = store.editingConnection == connection.id
-            // Only for references that are drawn, and then only when legible or active.
+            // Only for links that are drawn, and then only when legible or active.
             if store.showsReference(connection) && (editing || related || detailed) {
             Group {
                 if store.editingConnection == connection.id {

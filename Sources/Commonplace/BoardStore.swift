@@ -941,11 +941,20 @@ final class BoardStore {
         let label: String
     }
 
+    /// Breadboard wiring: a connection from a place's affordance, or between
+    /// two places. It's the diagram itself ("this leads there"), so it's
+    /// always drawn and isn't treated as a reference.
+    func isWire(_ c: Connection) -> Bool {
+        if c.fromItem != nil { return true }
+        return card(c.from)?.kind == .place && card(c.to)?.kind == .place
+    }
+
     /// A card's references, both ways: what it points to, then what points to it.
     func references(of id: UUID) -> [Reference] {
-        let out = board.connections.filter { $0.from == id }
+        let refs = board.connections.filter { !isWire($0) }
+        let out = refs.filter { $0.from == id }
             .map { Reference(id: $0.id, other: $0.to, outgoing: true, label: $0.label) }
-        let into = board.connections.filter { $0.to == id }
+        let into = refs.filter { $0.to == id }
             .map { Reference(id: $0.id, other: $0.from, outgoing: false, label: $0.label) }
         return out + into
     }
@@ -953,7 +962,7 @@ final class BoardStore {
     /// Whether a reference's line is shown: it belongs to the selection, is
     /// itself selected, or all references are on.
     func showsReference(_ c: Connection) -> Bool {
-        showAllReferences || selection.contains(c.from) || selection.contains(c.to)
+        isWire(c) || showAllReferences || selection.contains(c.from) || selection.contains(c.to)
             || selectedConnection == c.id || editingConnection == c.id
     }
 

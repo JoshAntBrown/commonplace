@@ -26,6 +26,9 @@ Alexander's pattern languages):
 - **Reference: a connection.** "This relates to that", between any two cards, anywhere. Shown as
   a chip on the card, with lines only for the card the user has selected; references that are off
   screen float beside it. Made with `connect`.
+- **Breadboard wires** are the exception: a connection from a place's affordance
+  (`from_affordance`), or between two places, is part of the diagram ("this leads there"). Wires are
+  always drawn and aren't references.
 
 Use a parent when a card grows out of another (a point from a talk, a consequence, a sub-part, the
 next step). Use a reference for everything else (supports, contradicts, example of, same idea as).
