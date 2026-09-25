@@ -25,8 +25,8 @@ final class BoardStore {
     var resolving: Set<UUID> = []
 
     @ObservationIgnored var canvasSize: CGSize = .zero
-    /// Canvas frame in window coordinates, for routing scroll events.
-    @ObservationIgnored var canvasFrame: CGRect = .zero
+    /// An AppKit view covering the canvas, for routing scroll and pinch events.
+    @ObservationIgnored weak var anchorView: NSView?
     @ObservationIgnored private var dirty = Set<UUID>()
     @ObservationIgnored private var removedFiles: [String] = []
     @ObservationIgnored private var saveWork: DispatchWorkItem?

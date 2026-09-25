@@ -49,6 +49,7 @@ struct CanvasView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .background(theme.background)
+            .background(CanvasAnchor(store: store))
             .clipped()
             .onContinuousHover { phase in
                 switch phase {
@@ -61,13 +62,9 @@ struct CanvasView: View {
             }
             .onAppear {
                 store.canvasSize = geo.size
-                store.canvasFrame = geo.frame(in: .global)
                 installMonitors()
             }
-            .onChange(of: geo.frame(in: .global)) { _, frame in
-                store.canvasSize = frame.size
-                store.canvasFrame = frame
-            }
+            .onChange(of: geo.size) { _, size in store.canvasSize = size }
             .onDisappear(perform: removeMonitors)
         }
         .navigationTitle(store.board.name)
@@ -210,26 +207,27 @@ struct CanvasView: View {
     /// editors and the sidebar are left alone.
     private static func handleScroll(_ event: NSEvent, store: BoardStore) -> Bool {
         guard let window = event.window, window.attachedSheet == nil,
-              let content = window.contentView else { return false }
-        var view = content.superview?.hitTest(event.locationInWindow) ?? content.hitTest(event.locationInWindow)
-        while let v = view {
-            if v is WKWebView || v is NSScrollView { return false }
-            view = v.superview
-        }
-        var p = content.convert(event.locationInWindow, from: nil)
-        if !content.isFlipped { p.y = content.bounds.height - p.y }
-        let frame = store.canvasFrame
-        guard frame.contains(p) else { return false }
-        let local = CGPoint(x: p.x - frame.minX, y: p.y - frame.minY)
+              let anchor = store.anchorView, anchor.window === window else { return false }
+        // Canvas coordinates straight from AppKit, wherever the canvas sits in the layout.
+        let p = anchor.convert(event.locationInWindow, from: nil)
+        guard anchor.bounds.contains(p) else { return false }
 
+        // Pinch always zooms the board, even over a video or a text editor.
         if event.type == .magnify {
-            store.zoom(by: 1 + event.magnification, around: local)
+            store.zoom(by: 1 + event.magnification, around: p)
             return true
+        }
+        // Scrolling over a web page or a text editor scrolls that instead.
+        var view = window.contentView?.superview?.hitTest(event.locationInWindow)
+        while let v = view {
+            if v is WKWebView { return false }
+            if let scroll = v as? NSScrollView, scroll.documentView is NSTextView { return false }
+            view = v.superview
         }
         var dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
         if !event.hasPreciseScrollingDeltas { dx *= 8; dy *= 8 }
         if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) {
-            store.zoom(by: exp(dy * 0.01), around: local)
+            store.zoom(by: exp(dy * 0.01), around: p)
         } else {
             store.pan(dx, dy)
         }
@@ -558,5 +556,27 @@ struct LinkPrompt: View {
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         onAdd()
         dismiss()
+    }
+}
+
+/// An invisible AppKit view the size of the canvas. Events are converted into
+/// its coordinates, so scroll and pinch routing doesn't depend on where the
+/// canvas sits in the window (sidebar, split view, toolbar).
+struct CanvasAnchor: NSViewRepresentable {
+    let store: BoardStore
+
+    final class AnchorView: NSView {
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> AnchorView {
+        let view = AnchorView()
+        store.anchorView = view
+        return view
+    }
+
+    func updateNSView(_ view: AnchorView, context: Context) {
+        store.anchorView = view
     }
 }
