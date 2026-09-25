@@ -36,7 +36,9 @@ struct CardView: View {
                                   lineWidth: isSelected ? 2 : 1)
             )
             .shadow(color: .black.opacity(theme.isDark ? 0.35 : 0.12), radius: 10 * c, y: 3 * c)
-            .overlay(alignment: .bottomTrailing) { if isSelected { resizeHandle } }
+            .overlay(alignment: .bottomTrailing) {
+                if isSelected, store.selection.count == 1 { resizeHandle }
+            }
             .contentShape(Rectangle())
             .gesture(moveGesture, including: isEditing ? .subviews : .all)
             .simultaneousGesture(TapGesture(count: 2).onEnded {

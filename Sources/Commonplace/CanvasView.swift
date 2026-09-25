@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import WebKit
+import AVKit
 import UniformTypeIdentifiers
 
 struct CanvasView: View {
@@ -9,6 +10,10 @@ struct CanvasView: View {
     /// Canvas offset and pointer position when the current pan began.
     @State private var panOrigin: (offset: CGPoint, touch: CGPoint)?
     @GestureState private var panning = false
+    /// Selection box in canvas coordinates while dragging on empty canvas.
+    @State private var marquee: CGRect?
+    @State private var marqueeBase: Set<UUID> = []
+    @State private var dragPans = false
     @State private var monitors: [Any] = []
     @State private var linkText = ""
     @AppStorage("showBrowser") private var showBrowser = false
@@ -19,7 +24,12 @@ struct CanvasView: View {
                 GridBackground(offset: store.offset, scale: store.scale, theme: theme)
                     .contentShape(Rectangle())
                     .gesture(backgroundGesture)
-                    .onChange(of: panning) { _, active in if !active { panOrigin = nil } }
+                    .onChange(of: panning) { _, active in
+                        if !active {
+                            panOrigin = nil
+                            marquee = nil
+                        }
+                    }
                     .simultaneousGesture(SpatialTapGesture(count: 2).onEnded { tap in
                         store.add(.sticky, at: store.toWorld(tap.location), edit: true)
                     })
@@ -35,6 +45,15 @@ struct CanvasView: View {
 
                 ForEach(store.board.connections) { connection in
                     ConnectionHandle(store: store, connection: connection)
+                }
+
+                if let marquee {
+                    Rectangle()
+                        .fill(theme.accent.opacity(0.08))
+                        .overlay(Rectangle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1))
+                        .frame(width: marquee.width, height: marquee.height)
+                        .position(x: marquee.midX, y: marquee.midY)
+                        .allowsHitTesting(false)
                 }
 
                 StatusBar(store: store)
@@ -111,19 +130,34 @@ struct CanvasView: View {
         DragGesture(minimumDistance: 0)
             .updating($panning) { _, state, _ in state = true }
             .onChanged { value in
+                // Drag on empty canvas draws a selection box; with Space held it pans.
                 if panOrigin == nil || panOrigin?.touch != value.startLocation {
                     panOrigin = (store.offset, value.startLocation)
+                    dragPans = store.spaceHeld
+                    marqueeBase = NSEvent.modifierFlags.contains(.shift) ? store.selection : []
+                    NSApp.keyWindow?.makeFirstResponder(nil)
                 }
-                guard let origin = panOrigin?.offset else { return }
-                store.offset = CGPoint(x: origin.x + value.translation.width, y: origin.y + value.translation.height)
+                if dragPans {
+                    guard let origin = panOrigin?.offset else { return }
+                    store.offset = CGPoint(x: origin.x + value.translation.width, y: origin.y + value.translation.height)
+                    return
+                }
+                guard abs(value.translation.width) >= 3 || abs(value.translation.height) >= 3 else { return }
+                let rect = CGRect(x: min(value.startLocation.x, value.location.x),
+                                  y: min(value.startLocation.y, value.location.y),
+                                  width: abs(value.location.x - value.startLocation.x),
+                                  height: abs(value.location.y - value.startLocation.y))
+                marquee = rect
+                store.select(in: rect, adding: marqueeBase)
             }
             .onEnded { value in
                 panOrigin = nil
-                if abs(value.translation.width) < 3 && abs(value.translation.height) < 3 {
+                marquee = nil
+                if abs(value.translation.width) < 3 && abs(value.translation.height) < 3,
+                   !NSEvent.modifierFlags.contains(.shift) {
                     store.clearSelection()
-                    NSApp.keyWindow?.makeFirstResponder(nil)
                 }
-                store.scheduleSave()
+                if dragPans { store.scheduleSave() }
             }
     }
 
@@ -192,10 +226,17 @@ struct CanvasView: View {
         let scroll = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) { event in
             Self.handleScroll(event, store: store) ? nil : event
         }
+        let spaceUp = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { event in
+            if event.keyCode == 49, store.spaceHeld {
+                store.spaceHeld = false
+                NSCursor.arrow.set()
+            }
+            return event
+        }
         let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             Self.handleKey(event, store: store) ? nil : event
         }
-        monitors = [scroll, keys].compactMap { $0 }
+        monitors = [scroll, keys, spaceUp].compactMap { $0 }
     }
 
     private func removeMonitors() {
@@ -237,10 +278,10 @@ struct CanvasView: View {
     private static func handleKey(_ event: NSEvent, store: BoardStore) -> Bool {
         guard let window = event.window, window.attachedSheet == nil else { return false }
         let inText = window.firstResponder is NSText
-        // Typing into a web page (browser or video) belongs to the page.
+        // Typing into a web page, or Space on a focused video player, belongs to it.
         var responder = window.firstResponder as? NSView
         while let v = responder {
-            if v is WKWebView { return false }
+            if v is WKWebView || v is AVPlayerView { return false }
             responder = v.superview
         }
         let flags = event.modifierFlags
@@ -277,6 +318,7 @@ struct CanvasView: View {
         if flags.contains(.command) {
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "v": store.paste(); return true
+            case "a": store.selectAll(); return true
             case "z":
                 if flags.contains(.shift) { store.redo() } else { store.undo() }
                 return true
@@ -287,6 +329,12 @@ struct CanvasView: View {
         if flags.contains(.control) { return false }
 
         switch event.keyCode {
+        case 49: // Space: hold and drag to pan
+            if !event.isARepeat, !store.spaceHeld {
+                store.spaceHeld = true
+                NSCursor.openHand.set()
+            }
+            return true
         case 51, 117: store.deleteSelection(); return true
         case 36, 76:
             if let id = store.selection.first { store.beginEditing(id) }
@@ -509,6 +557,8 @@ struct HelpOverlay: View {
         ("Affordance dot", "Connect that affordance → click a place"), ("T", "Thought from the selection (a moment on videos)"),
         ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
+        ("Drag · ⇧-drag", "Select a box of cards · add to selection"),
+        ("Space-drag", "Pan the board"), ("⌘A", "Select all"),
         ("Delete", "Remove selection"), ("⌘Z · ⇧⌘Z", "Undo · redo"), ("Scroll · ⌘-scroll", "Pan · zoom"),
         ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),
     ]

@@ -387,6 +387,27 @@ final class BoardStore {
         update(id, content: false) { _ in }
     }
 
+    /// Space is held: dragging the canvas pans rather than selects.
+    @ObservationIgnored var spaceHeld = false
+
+    /// Selects every card touching a box drawn in canvas coordinates.
+    func select(in screenRect: CGRect, adding base: Set<UUID>) {
+        let a = toWorld(screenRect.origin)
+        let b = toWorld(CGPoint(x: screenRect.maxX, y: screenRect.maxY))
+        let world = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
+        let hit = Set(board.cards.filter { $0.frame.intersects(world) }.map(\.id))
+        editing = nil
+        selectedConnection = nil
+        let next = base.union(hit)
+        if next != selection { selection = next }
+    }
+
+    func selectAll() {
+        editing = nil
+        selectedConnection = nil
+        selection = Set(board.cards.map(\.id))
+    }
+
     func beginEditing(_ id: UUID) {
         editSession += 1
         pendingTyping = ""
