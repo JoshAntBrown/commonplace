@@ -50,6 +50,8 @@ struct CanvasView: View {
                         .position(x: r.midX, y: r.midY)
                 }
 
+                ReferenceHalo(store: store)
+
                 if let marquee {
                     Rectangle()
                         .fill(theme.accent.opacity(0.08))
@@ -358,7 +360,8 @@ struct CanvasView: View {
         case "i": store.pickImages()
         case "c":
             if flags.contains(.shift) { store.startSequenceLink() } else { store.startConnecting() }
-        case "a": store.tidy()
+        case "a": if !store.tidy() { NSSound.beep() }
+        case "r": store.showAllReferences.toggle()
         case "p": store.add(.place, at: p, edit: true)
         case "t":
             if flags.contains(.shift) { store.continueSequence() } else { store.addThought() }
@@ -491,14 +494,15 @@ struct ConnectionsLayer: View {
                 ctx.fill(Path(ellipseIn: CGRect(x: end.x - r, y: end.y - r, width: r * 2, height: r * 2)), with: .color(color))
             }
 
-            // References: the web across the tree. Dashed and quiet until focused.
-            for c in store.board.connections {
+            // References: the web across the tree. Only the active card's are
+            // drawn (or all, with R); the rest travel as chips on the cards.
+            for c in store.board.connections where store.showsReference(c) {
                 guard let (p1, p2) = store.endpoints(c) else { continue }
                 // Focus and context: the focused cards' connections come forward,
                 // the rest recede; with no focus, all lines stay quiet.
-                let related = focus.contains(c.from) || focus.contains(c.to) || store.selectedConnection == c.id
-                let color: SwiftUI.Color = related ? theme.accent
-                    : theme.muted.opacity(focus.isEmpty ? 0.4 : 0.15)
+                let related = store.selection.contains(c.from) || store.selection.contains(c.to)
+                    || store.selectedConnection == c.id
+                let color: SwiftUI.Color = related ? theme.accent : theme.muted.opacity(0.5)
                 let width = max(1, (related ? 1.8 : 1.2) * chrome)
                 var path = Path()
                 path.move(to: p1)
@@ -532,12 +536,12 @@ struct ConnectionHandle: View {
     var body: some View {
         if let (p1, p2) = store.endpoints(connection) {
             let selected = store.selectedConnection == connection.id
-            let focus = store.focusedCards
+            let focus = store.selection
             let related = selected || focus.contains(connection.from) || focus.contains(connection.to)
             let detailed = store.scale >= BoardStore.detailZoom
             let editing = store.editingConnection == connection.id
-            // Labels and dots only when they can be read, or belong to what you're looking at.
-            if editing || related || detailed {
+            // Only for references that are drawn, and then only when legible or active.
+            if store.showsReference(connection) && (editing || related || detailed) {
             Group {
                 if store.editingConnection == connection.id {
                     TextField("Label", text: $text)
@@ -640,7 +644,8 @@ struct HelpOverlay: View {
         ("C · ⇧C", "Reference → click target · sequence link → click what follows"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
         ("Affordance dot", "Connect that affordance → click a place"), ("T · ⇧T", "Branch a thought from the selection · continue its sequence"),
-        ("A", "Tidy the selection's tree (or every tree)"),
+        ("A", "Tidy the selected branch"),
+        ("R", "Show every reference line (or just the selection's)"),
         ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
         ("Drag · ⇧-drag", "Select a box of cards · add to selection"),
@@ -728,5 +733,108 @@ struct CanvasAnchor: NSViewRepresentable {
 
     func updateNSView(_ view: AnchorView, context: Context) {
         store.anchorView = view
+    }
+}
+
+/// Floating references: when one card is active, the cards it references (or
+/// that reference it) which are off screen float beside it as small
+/// previews. Choosing one travels there, and its own references float in.
+struct ReferenceHalo: View {
+    let store: BoardStore
+    @Environment(\.theme) private var theme
+
+    private struct Proxy: Identifiable {
+        let ref: BoardStore.Reference
+        let card: Card
+        let frame: CGRect
+        let angle: Double
+        var id: UUID { ref.id }
+    }
+
+    private static let size = CGSize(width: 210, height: 54)
+
+    var body: some View {
+        let proxies = layout()
+        if !proxies.isEmpty, let id = store.selection.first, let active = store.card(id) {
+            let source = store.toScreen(active.frame)
+            ZStack(alignment: .topLeading) {
+                Canvas { ctx, _ in
+                    for p in proxies {
+                        let start = Geometry.edge(source.insetBy(dx: -4, dy: -4), toward: CGPoint(x: p.frame.midX, y: p.frame.midY))
+                        let end = Geometry.edge(p.frame.insetBy(dx: -3, dy: -3), toward: start)
+                        var path = Path()
+                        path.move(to: start)
+                        path.addLine(to: end)
+                        ctx.stroke(path, with: .color(theme.accent.opacity(0.6)),
+                                   style: StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [4, 4]))
+                    }
+                }
+                .allowsHitTesting(false)
+                ForEach(proxies) { p in
+                    proxyCard(p)
+                        .frame(width: p.frame.width, height: p.frame.height)
+                        .position(x: p.frame.midX, y: p.frame.midY)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: proxies.map(\.id))
+        }
+    }
+
+    private func proxyCard(_ p: Proxy) -> some View {
+        Button { store.reveal(p.ref.other, animated: true) } label: {
+            HStack(spacing: 9) {
+                // Points toward where the card really is.
+                Image(systemName: "location.north.fill")
+                    .font(.system(size: 11))
+                    .rotationEffect(.radians(p.angle + .pi / 2))
+                    .foregroundStyle(theme.accent)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text((p.ref.outgoing ? "→ " : "← ") + (p.ref.label.isEmpty ? (p.ref.outgoing ? "refers to" : "referred to by") : p.ref.label))
+                        .font(.system(size: 10))
+                        .foregroundStyle(theme.muted)
+                        .lineLimit(1)
+                    Text(p.card.headline)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(theme.surface.opacity(0.96), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(theme.accent.opacity(0.45)))
+            .shadow(color: .black.opacity(theme.isDark ? 0.4 : 0.15), radius: 8, y: 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Go to “\(p.card.headline)”")
+    }
+
+    /// Off-screen references for a single active card, stacked in a column
+    /// on whichever side of it has room.
+    private func layout() -> [Proxy] {
+        guard store.selection.count == 1, let id = store.selection.first, let active = store.card(id),
+              store.viewSize != .zero else { return [] }
+        let view = CGRect(origin: .zero, size: store.viewSize)
+        let source = store.toScreen(active.frame)
+        let offscreen = store.references(of: id).compactMap { ref -> (BoardStore.Reference, Card, CGRect)? in
+            guard let other = store.card(ref.other) else { return nil }
+            let r = store.toScreen(other.frame)
+            return view.insetBy(dx: 24, dy: 24).intersects(r) ? nil : (ref, other, r)
+        }
+        guard !offscreen.isEmpty else { return [] }
+        let size = Self.size, gap: CGFloat = 8, margin: CGFloat = 36
+        let total = CGFloat(offscreen.count) * (size.height + gap) - gap
+        let right = source.maxX + margin + size.width <= view.width - 12 || source.minX - margin - size.width < 12
+        let x = right ? source.maxX + margin : source.minX - margin - size.width
+        var y = min(max(12, source.midY - total / 2), max(12, view.height - total - 12))
+        return offscreen.map { ref, other, r in
+            let frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+            y += size.height + gap
+            let angle = atan2(r.midY - frame.midY, r.midX - frame.midX)
+            return Proxy(ref: ref, card: other, frame: frame, angle: angle)
+        }
     }
 }

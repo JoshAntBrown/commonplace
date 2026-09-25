@@ -81,6 +81,26 @@ struct Card: Identifiable, Equatable {
     static func videoHeight(width: CGFloat) -> CGFloat { headerHeight + width * 9 / 16 }
 }
 
+extension Card {
+    /// A one-line name for the card: its title, or the first line of its text
+    /// with the Markdown stripped (a moment keeps its timestamp).
+    var headline: String {
+        if !title.isEmpty { return title }
+        let line = body.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+        var text = line
+        if text.hasPrefix("#") {
+            text = String(text.drop { $0 == "#" })
+        } else if let prefix = ["- [ ] ", "- [x] ", "- ", "* ", "> "].first(where: text.hasPrefix) {
+            text = String(text.dropFirst(prefix.count))
+        }
+        let plain = text.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
+        return plain.isEmpty ? (url.flatMap { URL(string: $0)?.host } ?? kind.label) : plain
+    }
+}
+
 struct Connection: Identifiable, Codable, Equatable {
     var id = UUID()
     var from: UUID

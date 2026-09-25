@@ -106,9 +106,9 @@ final class MCPTools {
               "board": boardArg],
              required: ["card_id", "parent_id"], readOnly: false),
         tool("tidy",
-             "Lay out a tree neatly: each card's children in a column to its right, in order. Tidies the tree containing card_id, or every tree on the board. Undoable.",
-             ["card_id": ["type": "string", "description": "Any card in the tree; omit for every tree."], "board": boardArg],
-             readOnly: false),
+             "Lay out one branch neatly: the card's children in a column to its right, in order, and theirs beside them. Only use it on branches you've just built or when asked; the user's own arrangement means something. Undoable.",
+             ["card_id": ["type": "string", "description": "The card whose branch to tidy."], "board": boardArg],
+             required: ["card_id"], readOnly: false),
         tool("delete_card", "Remove a card and its connections. Only when the user asks; it can be undone with ⌘Z.",
              ["card_id": cardArg, "board": boardArg], required: ["card_id"], readOnly: false, destructive: true),
         tool("create_board", "Create a new, empty board.",
@@ -197,7 +197,10 @@ final class MCPTools {
             return ["board": NSNull(), "selected": []]
         }
         let selected = store.board.cards.filter { store.selection.contains($0.id) }
-        return ["board": name, "selected": selected.map { Self.json($0, full: true) }]
+        let size = store.viewSize
+        let a = store.toWorld(.zero), b = store.toWorld(CGPoint(x: size.width, y: size.height))
+        return ["board": name, "selected": selected.map { Self.json($0, full: true) },
+                "visible_area": ["x": Int(a.x), "y": Int(a.y), "width": Int(b.x - a.x), "height": Int(b.y - a.y)]]
     }
 
     private func getVideoMoments(_ a: [String: Any], done: @escaping Reply) throws {
@@ -333,9 +336,9 @@ final class MCPTools {
 
     private func tidy(_ a: [String: Any]) throws -> Any {
         let store = try self.store(a)
-        let ids: Set<UUID>? = try a["card_id"].map { [try cardID($0, in: store)] }
-        store.tidy(ids ?? [])
-        return ["board": store.board.name, "tidied": ids == nil ? "every tree" : "one tree"]
+        let id = try cardID(a["card_id"], in: store)
+        guard store.tidy([id]) else { throw ToolError("That card has nothing following from it to tidy.") }
+        return ["board": store.board.name, "tidied": id.uuidString.lowercased()]
     }
 
     private func deleteCard(_ a: [String: Any]) throws -> Any {

@@ -23,8 +23,9 @@ Alexander's pattern languages):
   card has at most one parent, so a board is a set of trees. The trees give a board its order:
   they're drawn as solid lines, tidied into columns and read in sequence. Set with `parent` on
   `add_card`, `add_thought`, or `set_parent`.
-- **Reference: a connection.** "This relates to that", between any two cards, anywhere. Drawn as
-  quiet dashed lines that come forward when the user focuses a card. Made with `connect`.
+- **Reference: a connection.** "This relates to that", between any two cards, anywhere. Shown as
+  a chip on the card, with lines only for the card the user has selected; references that are off
+  screen float beside it. Made with `connect`.
 
 Use a parent when a card grows out of another (a point from a talk, a consequence, a sub-part, the
 next step). Use a reference for everything else (supports, contradicts, example of, same idea as).
@@ -59,7 +60,8 @@ each card is.
 
 - **Build trees, not scatter.** Give each new card the `parent` it grows out of, so related ideas
   form a branch. Several points from one source are siblings under it. After adding a batch, call
-  `tidy` on it so the branch is laid out cleanly.
+  `tidy` on the card you built from so the new branch is laid out cleanly. Never tidy the user's
+  existing arrangement unless they ask.
 - **Reference sparingly.** Draw only the strongest cross-links, usually one or two per card. If a
   card mostly belongs somewhere else, give it that parent instead of a long line across the board.
 - **Short labels.** One to three words ("supports", "example of", "tension"), or none when the

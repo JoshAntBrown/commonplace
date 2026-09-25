@@ -27,6 +27,8 @@ final class BoardStore {
     var resolving: Set<UUID> = []
 
     @ObservationIgnored var canvasSize: CGSize = .zero
+    /// The canvas's real size, from AppKit when it's on screen.
+    var viewSize: CGSize { anchorView.map(\.bounds.size) ?? canvasSize }
     /// An AppKit view covering the canvas, for routing scroll and pinch events.
     @ObservationIgnored weak var anchorView: NSView?
     @ObservationIgnored private var dirty = Set<UUID>()
@@ -115,7 +117,7 @@ final class BoardStore {
 
     /// Where new cards go: under the pointer, or the middle of the view.
     var insertionPoint: CGPoint {
-        toWorld(hover ?? CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2))
+        toWorld(hover ?? CGPoint(x: viewSize.width / 2, y: viewSize.height / 2))
     }
 
     func pan(_ dx: CGFloat, _ dy: CGFloat) {
@@ -125,7 +127,7 @@ final class BoardStore {
     }
 
     func zoom(by factor: CGFloat, around point: CGPoint? = nil) {
-        let anchor = point ?? CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+        let anchor = point ?? CGPoint(x: viewSize.width / 2, y: viewSize.height / 2)
         let world = toWorld(anchor)
         scale = min(4, max(0.1, scale * factor))
         offset = CGPoint(x: anchor.x - world.x * scale, y: anchor.y - world.y * scale)
@@ -135,11 +137,11 @@ final class BoardStore {
     func resetZoom() { zoom(by: 1 / scale) }
 
     func zoomToFit() {
-        guard let first = board.cards.first, canvasSize.width > 0 else { return }
+        guard let first = board.cards.first, viewSize.width > 0 else { return }
         let r = board.cards.reduce(first.frame) { $0.union($1.frame) }.insetBy(dx: -60, dy: -60)
-        scale = min(1.5, max(0.1, min(canvasSize.width / r.width, canvasSize.height / r.height)))
-        offset = CGPoint(x: (canvasSize.width - r.width * scale) / 2 - r.minX * scale,
-                         y: (canvasSize.height - r.height * scale) / 2 - r.minY * scale)
+        scale = min(1.5, max(0.1, min(viewSize.width / r.width, viewSize.height / r.height)))
+        offset = CGPoint(x: (viewSize.width - r.width * scale) / 2 - r.minX * scale,
+                         y: (viewSize.height - r.height * scale) / 2 - r.minY * scale)
         scheduleSave()
     }
 
@@ -311,7 +313,7 @@ final class BoardStore {
 
     /// Clips land in the middle of the view, fanned out so they don't stack.
     private func nextClipPoint() -> CGPoint {
-        let c = toWorld(CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2))
+        let c = toWorld(CGPoint(x: viewSize.width / 2, y: viewSize.height / 2))
         defer { clipCount += 1 }
         let step = CGFloat(clipCount % 6) * 28 / scale
         return CGPoint(x: c.x + step, y: c.y + step)
@@ -734,16 +736,24 @@ final class BoardStore {
     /// board. Each card's children form a column to its right, in their
     /// current top-to-bottom order; roots stay where they are unless a tidied
     /// tree would overlap other cards, in which case it moves down to clear them.
-    func tidy(_ ids: Set<UUID>? = nil) {
+    /// Only ever the selected branches: rearranging a whole board destroys a
+    /// spatial arrangement that means something to the user.
+    @discardableResult
+    func tidy(_ ids: Set<UUID>? = nil) -> Bool {
         let scope = ids ?? selection
-        var roots: [UUID]
-        if scope.isEmpty {
-            roots = board.cards.filter { $0.parent == nil && !children(of: $0.id).isEmpty }.map(\.id)
-        } else {
-            roots = Array(Set(scope.map(root(of:))))
-        }
+        // Tidy each selected card's branch, skipping cards inside another selected branch.
+        var roots = Array(scope).filter { id in
+            var cursor = card(id)?.parent
+            var hops = 0
+            while let c = cursor, hops < 64 {
+                if scope.contains(c) { return false }
+                cursor = card(c)?.parent
+                hops += 1
+            }
+            return true
+        }.filter { !children(of: $0).isEmpty }
         roots.sort { (card($0)?.frame.minY ?? 0) < (card($1)?.frame.minY ?? 0) }
-        guard !roots.isEmpty else { return }
+        guard !roots.isEmpty else { return false }
         checkpoint()
 
         var frames = Dictionary(board.cards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
@@ -789,6 +799,7 @@ final class BoardStore {
             }
         }
         scheduleSave()
+        return true
     }
 
     func root(of id: UUID) -> UUID {
@@ -882,15 +893,68 @@ final class BoardStore {
     }
 
     /// Selects a card and centres the view on it.
-    func reveal(_ id: UUID) {
+    func reveal(_ id: UUID, animated: Bool = false) {
         guard let card = card(id) else { return }
         selection = [id]
         selectedConnection = nil
+        editing = nil
         guard canvasSize != .zero else { pendingReveal = id; return }
         pendingReveal = nil
-        offset = CGPoint(x: canvasSize.width / 2 - card.frame.midX * scale,
-                         y: canvasSize.height / 2 - card.frame.midY * scale)
+        let target = CGPoint(x: viewSize.width / 2 - card.frame.midX * scale,
+                             y: viewSize.height / 2 - card.frame.midY * scale)
+        if animated { glide(to: target) } else { offset = target }
+        flash = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { [weak self] in
+            if self?.flash == id { withAnimation(.easeOut(duration: 0.4)) { self?.flash = nil } }
+        }
         scheduleSave()
+    }
+
+    /// A card briefly outlined after travelling to it.
+    var flash: UUID?
+
+    /// Pans smoothly by stepping the offset, so lines (drawn in a Canvas)
+    /// move in step with the cards.
+    @ObservationIgnored private var glideTimer: Timer?
+
+    private func glide(to target: CGPoint) {
+        glideTimer?.invalidate()
+        let start = offset, began = Date(), duration = 0.4
+        glideTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            guard let self else { return timer.invalidate() }
+            let t = min(1, Date().timeIntervalSince(began) / duration)
+            let e = t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+            self.offset = CGPoint(x: start.x + (target.x - start.x) * e, y: start.y + (target.y - start.y) * e)
+            if t >= 1 { timer.invalidate(); self.scheduleSave() }
+        }
+    }
+
+    // MARK: References
+
+    /// Draw every reference line, not just the selected card's (R).
+    var showAllReferences = false
+
+    struct Reference: Identifiable {
+        let id: UUID
+        let other: UUID
+        let outgoing: Bool
+        let label: String
+    }
+
+    /// A card's references, both ways: what it points to, then what points to it.
+    func references(of id: UUID) -> [Reference] {
+        let out = board.connections.filter { $0.from == id }
+            .map { Reference(id: $0.id, other: $0.to, outgoing: true, label: $0.label) }
+        let into = board.connections.filter { $0.to == id }
+            .map { Reference(id: $0.id, other: $0.from, outgoing: false, label: $0.label) }
+        return out + into
+    }
+
+    /// Whether a reference's line is shown: it belongs to the selection, is
+    /// itself selected, or all references are on.
+    func showsReference(_ c: Connection) -> Bool {
+        showAllReferences || selection.contains(c.from) || selection.contains(c.to)
+            || selectedConnection == c.id || editingConnection == c.id
     }
 
     /// A card to reveal once the canvas has a size.

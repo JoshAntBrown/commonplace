@@ -10,6 +10,7 @@ struct CardView: View {
     @Environment(\.theme) private var theme
     @GestureState private var dragging = false
     @GestureState private var resizing = false
+    @State private var showReferences = false
 
     /// Content (text, images, video) scales with zoom.
     private var s: CGFloat { store.scale }
@@ -38,6 +39,14 @@ struct CardView: View {
             .shadow(color: .black.opacity(theme.isDark ? 0.35 : 0.12), radius: 10 * c, y: 3 * c)
             .overlay(alignment: .bottomTrailing) {
                 if isSelected, store.selection.count == 1 { resizeHandle }
+            }
+            .overlay(alignment: .bottomLeading) { referenceChip }
+            .overlay {
+                if store.flash == card.id {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .strokeBorder(theme.accent, lineWidth: 4)
+                        .transition(.opacity)
+                }
             }
             .contentShape(Rectangle())
             .gesture(moveGesture, including: isEditing ? .subviews : .all)
@@ -119,6 +128,70 @@ struct CardView: View {
         (speed == speed.rounded() ? String(Int(speed)) : String(format: "%g", speed)) + "×"
     }
 
+    /// References travel with the card rather than as lines across the board:
+    /// a small count hanging off the card's bottom edge (clear of its text)
+    /// that opens the list. Hidden when zoomed out unless the card is selected.
+    @ViewBuilder private var referenceChip: some View {
+        let refs = store.references(of: card.id)
+        if !refs.isEmpty, !overview || isSelected {
+            let k = overview ? 1 : max(c, 0.8)  // small, but always legible and clickable
+            Button { showReferences.toggle() } label: {
+                HStack(spacing: 3 * k) {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 7.5 * k, weight: .bold))
+                    Text("\(refs.count)")
+                        .font(.system(size: 9.5 * k, weight: .semibold))
+                        .monospacedDigit()
+                }
+                .foregroundStyle(isSelected ? theme.accent : theme.muted)
+                .padding(.horizontal, 6 * k)
+                .padding(.vertical, 2 * k)
+                .background(theme.surface, in: Capsule())
+                .overlay(Capsule().strokeBorder(isSelected ? theme.accent.opacity(0.6) : theme.border, lineWidth: 1))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("\(refs.count) reference\(refs.count == 1 ? "" : "s")")
+            .popover(isPresented: $showReferences, arrowEdge: .bottom) { referenceList(refs) }
+            .offset(x: 12 * k, y: 8 * k)
+        }
+    }
+
+    private func referenceList(_ refs: [BoardStore.Reference]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(refs) { ref in
+                Button {
+                    showReferences = false
+                    store.reveal(ref.other, animated: true)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                        Image(systemName: ref.outgoing ? "arrow.right" : "arrow.left")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(theme.accent)
+                            .frame(width: 12)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(store.card(ref.other)?.headline ?? "Card")
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(theme.text)
+                                .lineLimit(2)
+                            if !ref.label.isEmpty {
+                                Text(ref.label).font(.system(size: 11)).foregroundStyle(theme.muted)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(width: 300)
+        .background(theme.surface)
+    }
+
     private var openButton: some View {
         Button {
             if let url = card.url.flatMap(URL.init(string:)) { NSWorkspace.shared.open(url) }
@@ -182,24 +255,6 @@ struct CardView: View {
         }
     }
 
-    /// The card's headline: its title, or the first line of its text with the
-    /// Markdown stripped (a moment keeps its timestamp).
-    private var headline: String {
-        if !card.title.isEmpty { return card.title }
-        let line = card.body.components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { !$0.isEmpty } ?? ""
-        var text = line
-        if text.hasPrefix("#") {
-            text = String(text.drop { $0 == "#" })
-        } else if let prefix = ["- [ ] ", "- [x] ", "- ", "* ", "> "].first(where: text.hasPrefix) {
-            text = String(text.dropFirst(prefix.count))
-        }
-        let plain = text.trimmingCharacters(in: .whitespaces)
-            .replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
-        return plain.isEmpty ? card.kind.label : plain
-    }
-
     /// Readable at any zoom: grows as the card shrinks, within limits.
     private var overviewFont: CGFloat { min(13, max(8, 30 * s)) }
 
@@ -232,7 +287,7 @@ struct CardView: View {
     private func overviewLabel(icon: String?, onImage: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: overviewFont * 0.35) {
             if let icon { Image(systemName: icon).font(.system(size: overviewFont * 0.8)) }
-            Text(headline)
+            Text(card.headline)
                 .font(.system(size: overviewFont, weight: .semibold))
                 .lineLimit(nil)
                 .underline(card.kind == .place)
