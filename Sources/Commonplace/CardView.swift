@@ -121,12 +121,12 @@ struct CardView: View {
 
     private var bodyBinding: Binding<String> {
         Binding(get: { store.card(card.id)?.body ?? "" },
-                set: { value in store.update(card.id) { $0.body = value } })
+                set: { value in store.editText(card.id) { $0.body = value } })
     }
 
     private var titleBinding: Binding<String> {
         Binding(get: { store.card(card.id)?.title ?? "" },
-                set: { value in store.update(card.id) { $0.title = value } })
+                set: { value in store.editText(card.id) { $0.title = value } })
     }
 
     private func bodyEditor(size: CGFloat) -> some View {

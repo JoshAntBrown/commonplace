@@ -265,7 +265,13 @@ struct CanvasView: View {
             return false
         }
         if flags.contains(.command) {
-            if event.charactersIgnoringModifiers == "v" { store.paste(); return true }
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "v": store.paste(); return true
+            case "z":
+                if flags.contains(.shift) { store.redo() } else { store.undo() }
+                return true
+            default: break
+            }
             return false
         }
         if flags.contains(.control) { return false }
@@ -495,7 +501,7 @@ struct HelpOverlay: View {
         ("Affordance dot", "Connect that affordance → click a place"), ("T", "Moment sticky from a video or its moments"),
         ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · Esc", "Edit · finish"),
-        ("Delete", "Remove selection"), ("Scroll · ⌘-scroll", "Pan · zoom"),
+        ("Delete", "Remove selection"), ("⌘Z · ⇧⌘Z", "Undo · redo"), ("Scroll · ⌘-scroll", "Pan · zoom"),
         ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),
     ]
 

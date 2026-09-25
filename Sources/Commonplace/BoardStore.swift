@@ -40,6 +40,21 @@ final class BoardStore {
     @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var clipCount = 0
 
+    // Undo history: whole-board snapshots taken before each user change.
+    private struct Snapshot {
+        var cards: [Card]
+        var connections: [Connection]
+    }
+    @ObservationIgnored private var undoStack: [Snapshot] = []
+    @ObservationIgnored private var redoStack: [Snapshot] = []
+    /// Consecutive checkpoints with the same key (typing in one editing
+    /// session) collapse into one undo step.
+    @ObservationIgnored private var lastCheckpointKey: String?
+    /// Several changes in one run-loop turn (e.g. a moment's sticky and its
+    /// arrow) are one undo step.
+    @ObservationIgnored private var checkpointedThisTurn = false
+    @ObservationIgnored private var editSession = 0
+
     init(library: Library, name: String) {
         self.library = library
         let board = library.load(name)
@@ -113,6 +128,7 @@ final class BoardStore {
     @discardableResult
     func add(_ kind: CardKind, at point: CGPoint, edit: Bool = false,
              configure: (inout Card) -> Void = { _ in }) -> UUID {
+        checkpoint()
         var card = Card(kind: kind)
         let size = kind.defaultSize
         card.frame = CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2,
@@ -320,10 +336,14 @@ final class BoardStore {
     }
 
     func setColor(_ color: CardColor) {
+        guard !selection.isEmpty else { return }
+        checkpoint()
         for id in selection { update(id) { $0.color = color } }
     }
 
     func deleteSelection() {
+        guard selectedConnection != nil || !selection.isEmpty else { return }
+        checkpoint()
         if let cid = selectedConnection {
             board.connections.removeAll { $0.id == cid }
             selectedConnection = nil
@@ -360,6 +380,7 @@ final class BoardStore {
     }
 
     func beginEditing(_ id: UUID) {
+        editSession += 1
         selection = [id]
         selectedConnection = nil
         // A plain video card has nothing to edit; its notes are moment stickies.
@@ -379,7 +400,10 @@ final class BoardStore {
             beginDrag(id, shift: shift)
         }
         guard let origins = dragOrigins, !origins.isEmpty else { return }
-        if abs(t.width) + abs(t.height) > 1 { didMove = true }
+        if !didMove, abs(t.width) + abs(t.height) > 1 {
+            checkpoint()
+            didMove = true
+        }
         for i in board.cards.indices {
             guard let o = origins[board.cards[i].id] else { continue }
             board.cards[i].frame.origin = CGPoint(x: o.x + t.width / scale, y: o.y + t.height / scale)
@@ -430,6 +454,7 @@ final class BoardStore {
     func resize(_ id: UUID, start: CGPoint, by t: CGSize) {
         guard let card = card(id) else { return }
         if resizeOrigin == nil || resizeStart != start {
+            checkpoint()
             resizeStart = start
             resizeOrigin = card.frame.size
         }
@@ -464,6 +489,7 @@ final class BoardStore {
         guard a != b, !board.connections.contains(where: {
             $0.fromItem == item && (($0.from == a && $0.to == b) || ($0.from == b && $0.to == a))
         }) else { return }
+        checkpoint()
         board.connections.append(Connection(from: a, to: b, fromItem: item))
         selection = [b]
         scheduleSave()
@@ -501,7 +527,10 @@ final class BoardStore {
 
     func setLabel(_ id: UUID, _ label: String) {
         guard let i = board.connections.firstIndex(where: { $0.id == id }) else { return }
-        board.connections[i].label = label.trimmingCharacters(in: .whitespaces)
+        let label = label.trimmingCharacters(in: .whitespaces)
+        guard board.connections[i].label != label else { return }
+        checkpoint()
+        board.connections[i].label = label
         scheduleSave()
     }
 
@@ -575,6 +604,75 @@ final class BoardStore {
             self.connect(videoID, moment)
             self.beginEditing(moment)
         }
+    }
+
+    // MARK: Undo
+
+    /// Typing into a card: one undo step per editing session.
+    func editText(_ id: UUID, _ change: (inout Card) -> Void) {
+        guard let before = card(id) else { return }
+        var after = before
+        change(&after)
+        guard after != before else { return }
+        checkpoint(coalescing: "text-\(id)-\(editSession)")
+        update(id, change)
+    }
+
+    /// Records the board as it is now, before a user change.
+    func checkpoint(coalescing key: String? = nil) {
+        guard !checkpointedThisTurn else { return }
+        if let key, key == lastCheckpointKey { return }
+        lastCheckpointKey = key
+        undoStack.append(Snapshot(cards: board.cards, connections: board.connections))
+        if undoStack.count > 200 { undoStack.removeFirst() }
+        redoStack.removeAll()
+        checkpointedThisTurn = true
+        DispatchQueue.main.async { [weak self] in self?.checkpointedThisTurn = false }
+    }
+
+    func undo() {
+        guard let snapshot = undoStack.popLast() else { NSSound.beep(); return }
+        redoStack.append(Snapshot(cards: board.cards, connections: board.connections))
+        restore(snapshot)
+    }
+
+    func redo() {
+        guard let snapshot = redoStack.popLast() else { NSSound.beep(); return }
+        undoStack.append(Snapshot(cards: board.cards, connections: board.connections))
+        restore(snapshot)
+    }
+
+    /// Swaps in a snapshot and reconciles the card files on disk with it.
+    private func restore(_ snapshot: Snapshot) {
+        let restoredIDs = Set(snapshot.cards.map(\.id))
+        let current = Dictionary(board.cards.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+        for card in board.cards where !restoredIDs.contains(card.id) {
+            removedFiles.append(card.fileName)
+            dirty.remove(card.id)
+            videos[card.id] = nil
+        }
+        var cards = snapshot.cards
+        for i in cards.indices {
+            if let live = current[cards[i].id] {
+                // Playback progress isn't part of history.
+                cards[i].position = live.position
+                if live == cards[i] { continue }
+            }
+            dirty.insert(cards[i].id)
+            removedFiles.removeAll { $0 == cards[i].fileName }
+        }
+        board.cards = cards
+        board.connections = snapshot.connections
+
+        selection.formIntersection(restoredIDs)
+        if let c = selectedConnection, !snapshot.connections.contains(where: { $0.id == c }) { selectedConnection = nil }
+        editing = nil
+        editingConnection = nil
+        connectingFrom = nil
+        lastCheckpointKey = nil
+        for i in board.cards.indices { fitHeight(&board.cards[i]) }
+        scheduleSave()
     }
 
     // MARK: Saving
