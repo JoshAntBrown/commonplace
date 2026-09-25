@@ -865,7 +865,7 @@ final class BoardStore {
         var frames = Dictionary(board.cards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         let childMap = Dictionary(grouping: board.cards.filter { $0.parent != nil }, by: { $0.parent! })
             .mapValues { $0.sorted { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }.map(\.id) }
-        let gapX: CGFloat = 80, gapY: CGFloat = 24
+        let gapX = Self.columnGap, gapY: CGFloat = 24
 
         // One level only: the card's own thoughts form a column to its right,
         // in their current order, spaced by their own size. Anything that
@@ -937,13 +937,26 @@ final class BoardStore {
         return thought
     }
 
-    /// The next free slot in the column to the right of a card.
+    /// Horizontal gap between a card and the column of its thoughts.
+    static let columnGap: CGFloat = 60
+
+    /// Where the next thought (or card beside `id`) goes: below the card's
+    /// existing thoughts, in their column, or level with the card if it has
+    /// none; then moved down past anything that's in the way.
     func columnSpot(beside id: UUID, size: CGSize) -> CGRect? {
         guard let source = card(id) else { return nil }
-        let x = source.frame.maxX + 60
-        let column = board.cards.filter { abs($0.frame.minX - x) < 1 && $0.frame.maxY > source.frame.minY - 1 }
-        let y = column.map { $0.frame.maxY + 16 }.max() ?? source.frame.minY
-        return CGRect(x: x, y: y, width: size.width, height: size.height)
+        let kids = children(of: id)
+        let lowest = kids.max { $0.frame.maxY < $1.frame.maxY }
+        var rect = CGRect(x: lowest?.frame.minX ?? source.frame.maxX + Self.columnGap,
+                          y: lowest.map { $0.frame.maxY + 16 } ?? source.frame.minY,
+                          width: size.width, height: size.height)
+        for _ in 0..<500 {
+            guard let blocker = board.cards.first(where: {
+                $0.id != id && $0.frame.insetBy(dx: -8, dy: -8).intersects(rect)
+            }) else { break }
+            rect.origin.y = blocker.frame.maxY + 16
+        }
+        return rect
     }
 
     /// Somewhere sensible for a new card when nothing says where: the middle of
