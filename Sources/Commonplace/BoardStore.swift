@@ -920,15 +920,27 @@ final class BoardStore {
     /// move in step with the cards.
     @ObservationIgnored private var glideTimer: Timer?
 
+    /// True while the view is gliding to a card; floating references wait for arrival.
+    var isGliding = false
+
+    /// Which side of each card its floating references last used, so they
+    /// don't jump sides as the view moves.
+    @ObservationIgnored var haloSide: [UUID: Bool] = [:]
+
     private func glide(to target: CGPoint) {
         glideTimer?.invalidate()
+        isGliding = true
         let start = offset, began = Date(), duration = 0.4
         glideTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
             guard let self else { return timer.invalidate() }
             let t = min(1, Date().timeIntervalSince(began) / duration)
             let e = t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
             self.offset = CGPoint(x: start.x + (target.x - start.x) * e, y: start.y + (target.y - start.y) * e)
-            if t >= 1 { timer.invalidate(); self.scheduleSave() }
+            if t >= 1 {
+                timer.invalidate()
+                withAnimation(.easeOut(duration: 0.18)) { self.isGliding = false }
+                self.scheduleSave()
+            }
         }
     }
 

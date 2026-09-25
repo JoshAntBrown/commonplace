@@ -863,7 +863,7 @@ struct ReferenceHalo: View {
     /// of it has room, capped to what fits in the view.
     private func layout() -> Layout {
         guard store.selection.count == 1, let id = store.selection.first, let active = store.card(id),
-              store.viewSize != .zero, store.editing != id else { return Layout() }
+              store.viewSize != .zero, store.editing != id, !store.isGliding else { return Layout() }
         let refs = store.references(of: id).compactMap { ref -> (BoardStore.Reference, Card)? in
             store.card(ref.other).map { (ref, $0) }
         }
@@ -875,7 +875,16 @@ struct ReferenceHalo: View {
         let shown = refs.count > fits ? fits - 1 : refs.count
         let rows = shown + (refs.count > shown ? 1 : 0)
         let total = CGFloat(rows) * (size.height + gap) - gap
-        let right = source.maxX + margin + size.width <= view.width - 12 || source.minX - margin - size.width < 12
+        // Keep to the side used last time for this card unless it no longer fits.
+        let fitsRight = source.maxX + margin + size.width <= view.width - 12
+        let fitsLeft = source.minX - margin - size.width >= 12
+        let right: Bool
+        if store.haloSide[id] == false {
+            right = !fitsLeft && fitsRight
+        } else {
+            right = fitsRight || !fitsLeft
+        }
+        store.haloSide[id] = right
         let x = right ? source.maxX + margin : source.minX - margin - size.width
         var y = min(max(12, source.midY - total / 2), max(12, view.height - total - 12))
         var layout = Layout()
