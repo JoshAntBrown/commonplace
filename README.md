@@ -50,6 +50,14 @@ Arrows (or **h j k l**) follow threads first: **←** to what the card follows f
 thought, **↑ ↓** through the thread; where a thread ends they move to the nearest card that way.
 **U** adds a link or video by URL.
 
+## Focus
+
+Press **O** (or right-click → Focus) to open one card up close: a video plays large, a note or
+image fills the space. Beside it: what it follows from, its thoughts (a video's in time order, with
+clickable timestamps), its references, and an "Add a thought" box (**T** to jump there; Return adds,
+on a video at the current time). Choosing any card in the panel focuses it instead. **Esc** goes
+back to the board.
+
 ## Copy and paste
 
 **⌘C** copies the selected cards (with their layout, and the threads and references among them),

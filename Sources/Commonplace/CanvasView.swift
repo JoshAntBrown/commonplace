@@ -52,6 +52,11 @@ struct CanvasView: View {
 
                 ReferenceHalo(store: store)
 
+                if let id = store.focusID, let card = store.card(id) {
+                    FocusView(store: store, card: card)
+                        .transition(.opacity)
+                }
+
                 if let marquee {
                     Rectangle()
                         .fill(theme.accent.opacity(0.08))
@@ -61,9 +66,11 @@ struct CanvasView: View {
                         .allowsHitTesting(false)
                 }
 
-                StatusBar(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .allowsHitTesting(false)
+                if store.focusID == nil {
+                    StatusBar(store: store)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                        .allowsHitTesting(false)
+                }
 
                 if store.showHelp {
                     HelpOverlay()
@@ -256,7 +263,8 @@ struct CanvasView: View {
     /// Scroll pans, ⌘/⌥-scroll and pinch zoom. Events over web views, text
     /// editors and the sidebar are left alone.
     private static func handleScroll(_ event: NSEvent, store: BoardStore) -> Bool {
-        guard let window = event.window, window.attachedSheet == nil,
+        // The focus view scrolls itself; the board behind it stays put.
+        guard store.focusID == nil, let window = event.window, window.attachedSheet == nil,
               let anchor = store.anchorView, anchor.window === window else { return false }
         // Canvas coordinates straight from AppKit, wherever the canvas sits in the layout.
         let p = anchor.convert(event.locationInWindow, from: nil)
@@ -302,6 +310,27 @@ struct CanvasView: View {
         }
         let flags = event.modifierFlags
 
+        // In the focus view, the board's shortcuts are off: Esc goes back,
+        // T jumps to the "Add a thought" box, [ ] change a video's speed.
+        if store.focusID != nil {
+            if event.keyCode == 53 {
+                // First Esc leaves the text box; the next leaves focus.
+                if inText {
+                    window.makeFirstResponder(nil)
+                } else {
+                    withAnimation(.easeOut(duration: 0.15)) { store.exitFocus() }
+                }
+                return true
+            }
+            if inText || flags.contains(.command) { return false }
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "t": store.focusComposerRequest += 1; return true
+            case "[", "]":
+                if let id = store.focusID { store.stepSpeed(id, up: event.charactersIgnoringModifiers == "]") }
+                return true
+            default: return false
+            }
+        }
         if event.keyCode == 53 { // Esc
             if store.editing != nil || store.editingConnection != nil {
                 store.editing = nil
@@ -376,6 +405,9 @@ struct CanvasView: View {
         case "s": store.add(.sticky, at: p, edit: true)
         case "n": store.add(.note, at: p, edit: true)
         case "u": store.showLinkPrompt = true
+        case "o":
+            guard let id = store.selection.first else { return false }
+            withAnimation(.easeOut(duration: 0.15)) { store.focus(id) }
         case "h": store.navigate(.left)
         case "j": store.navigate(.down)
         case "k": store.navigate(.up)
@@ -668,7 +700,8 @@ struct HelpOverlay: View {
         ("⌘V", "Paste URL, image or text"), ("Double-click", "Sticky on canvas / edit card"),
         ("C · ⇧C", "Reference → click target · thread → click what follows"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
-        ("Affordance dot", "Connect that affordance → click a place"), ("T · ⇧T", "Thought about the selection · next thought after it (on a video: at the current time)"),
+        ("Affordance dot", "Connect that affordance → click a place"), ("O", "Focus the selected card: large, with its thoughts and references"),
+        ("T · ⇧T", "Thought about the selection · next thought after it (on a video: at the current time)"),
         ("A", "Line up the selected card's thoughts"),
         ("R", "Show every reference as a line"),
         ("[ · ]", "Video slower · faster"),

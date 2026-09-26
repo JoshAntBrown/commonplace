@@ -45,6 +45,17 @@ enum VideoSource: Equatable {
     }
 }
 
+extension Card {
+    /// A still for a video: its saved poster, or YouTube's thumbnail.
+    var posterURL: URL? {
+        if let image, image.hasPrefix("http") { return URL(string: image) }
+        if case .youtube(let id, _)? = url.flatMap(URL.init(string:)).flatMap(VideoSource.detect) {
+            return URL(string: "https://i.ytimg.com/vi/\(id)/hqdefault.jpg")
+        }
+        return nil
+    }
+}
+
 /// Lets a card read and set the playback position of its embedded video.
 final class VideoController {
     weak var webView: WKWebView?

@@ -1122,6 +1122,55 @@ final class BoardStore {
         scheduleSave()
     }
 
+    // MARK: Focus
+
+    /// The card open in the focus view, if any.
+    var focusID: UUID?
+    /// Bumped to put the cursor in the focus view's "Add a thought" box.
+    var focusComposerRequest = 0
+
+    func focus(_ id: UUID) {
+        guard let card = card(id) else { return }
+        // A video moves to the focus view's player; pick up where it was.
+        if card.kind == .video { video(id).resumeAt = card.position }
+        editing = nil
+        selection = [id]
+        focusID = id
+    }
+
+    /// Leaves the focus view, with the card it ended on selected and in view.
+    func exitFocus() {
+        guard let id = focusID else { return }
+        if let card = card(id), card.kind == .video { video(id).resumeAt = card.position }
+        focusID = nil
+        reveal(id, animated: true)
+    }
+
+    /// A thought from the focus view's box: threaded from the focused card,
+    /// placed on the board beside it; on a video it gets the current time.
+    func addFocusThought(_ text: String) {
+        guard let id = focusID, let card = card(id) else { return }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        if card.kind == .video {
+            video(id).currentTime { [weak self] t in
+                self?.placeThought(from: id, body: "[\(Timestamp.format(t))] " + text, interactive: false)
+            }
+        } else {
+            placeThought(from: id, body: text, interactive: false)
+        }
+    }
+
+    /// A card's thoughts in reading order: a video's by time, others top to bottom.
+    func orderedThoughts(of id: UUID) -> [Card] {
+        let kids = children(of: id)
+        guard card(id)?.kind == .video else { return kids }
+        func time(_ c: Card) -> Double {
+            MarkdownText.timestamp(c.body.components(separatedBy: "\n").first ?? "")?.seconds ?? .infinity
+        }
+        return kids.sorted { time($0) < time($1) }
+    }
+
     /// A card briefly outlined after travelling to it.
     var flash: UUID?
     /// A card outlined while its entry in the floating references is hovered.

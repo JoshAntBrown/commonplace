@@ -60,6 +60,7 @@ struct CardView: View {
             .onChange(of: resizing) { _, active in if !active { store.endResize() } }
             .onChange(of: isEditing) { _, _ in if card.kind == .place { store.fitPlace(card.id) } }
             .contextMenu {
+                Button("Focus") { store.focus(card.id) }
                 Button("Add Thought") { store.selection = [card.id]; store.addThought() }
                 Button("Choose What Follows This…") { store.selection = [card.id]; store.startThreadLink() }
                 Button("Tidy Thread") { store.tidy([card.id]) }
@@ -244,19 +245,11 @@ struct CardView: View {
     /// summary range and only shrinks, to an 8pt floor, when zoomed far out.
     private var overviewFont: CGFloat { min(13, max(8, 30 * s)) }
 
-    private var posterURL: URL? {
-        if let image = card.image, image.hasPrefix("http") { return URL(string: image) }
-        if case .youtube(let id, _)? = card.url.flatMap(URL.init(string:)).flatMap(VideoSource.detect) {
-            return URL(string: "https://i.ytimg.com/vi/\(id)/hqdefault.jpg")
-        }
-        return nil
-    }
-
     @ViewBuilder private var overviewCard: some View {
         if card.kind == .video {
             Color.black
                 .overlay {
-                    if let url = posterURL {
+                    if let url = card.posterURL {
                         AsyncImage(url: url) { phase in
                             phase.image?.resizable().aspectRatio(contentMode: .fill)
                         }
@@ -417,6 +410,15 @@ struct CardView: View {
                         Color.black
                         ProgressView().controlSize(.small)
                     }
+                } else if store.focusID == card.id {
+                    // Playing in the focus view; one player at a time.
+                    Color.black.overlay {
+                        if let url = card.posterURL {
+                            AsyncImage(url: url) { $0.image?.resizable().aspectRatio(contentMode: .fill).opacity(0.5) }
+                        }
+                    }
+                    .overlay { Label("In focus", systemImage: "scope").font(.system(size: 12 * c)).foregroundStyle(.white) }
+                    .clipped()
                 } else if case .file(let url) = VideoSource.of(card) {
                     NativeVideoView(url: url, controller: store.video(card.id))
                 } else if let source = VideoSource.of(card) {
