@@ -530,6 +530,49 @@ final class BoardStore {
     @ObservationIgnored var spaceDownAt: Date?
     @ObservationIgnored var spacePanned = false
 
+    // MARK: Placing a new card
+
+    /// A card waiting to be placed: a preview follows the pointer until a
+    /// click, Return or typing drops it.
+    var placing: CardKind?
+
+    func startPlacing(_ kind: CardKind) {
+        editing = nil
+        connectingFrom = nil
+        placing = kind
+    }
+
+    func cancelPlacing() {
+        guard placing != nil else { return }
+        placing = nil
+    }
+
+    /// Drops the waiting card centred on `point` (world coordinates), or under
+    /// the pointer, and opens it for typing; `typed` is kept as its first keys.
+    func place(at point: CGPoint? = nil, typed: String = "") {
+        guard let kind = placing else { return }
+        placing = nil
+        let center = point ?? insertionPoint
+        add(kind, at: center, edit: true)
+        pendingTyping = typed
+        // The preview presses down onto the board over the new card.
+        stamp = Stamp(kind: kind, center: center, rotation: placingTilt)
+        placingTilt = 0
+    }
+
+    /// The preview's current tilt from the pointer's movement, so the press-down
+    /// starts from it.
+    @ObservationIgnored var placingTilt: Double = 0
+
+    /// The press-down animation after placing, drawn over the new card.
+    struct Stamp: Identifiable, Equatable {
+        let id = UUID()
+        let kind: CardKind
+        let center: CGPoint
+        var rotation: Double = 0
+    }
+    var stamp: Stamp?
+
     /// The one selected card, if it's a video.
     var selectedVideo: UUID? {
         guard selection.count == 1, let id = selection.first, card(id)?.kind == .video else { return nil }

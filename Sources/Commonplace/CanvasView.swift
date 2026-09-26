@@ -52,6 +52,13 @@ struct CanvasView: View {
 
                 ReferenceHalo(store: store)
 
+                if let kind = store.placing {
+                    PlacementLayer(store: store, kind: kind)
+                }
+                if let stamp = store.stamp {
+                    PlacementStamp(store: store, stamp: stamp).id(stamp.id)
+                }
+
                 if let id = store.focusID, let card = store.card(id) {
                     FocusView(store: store, card: card)
                         .transition(.opacity)
@@ -108,16 +115,16 @@ struct CanvasView: View {
         }
         .toolbar {
             ToolbarItemGroup {
-                Button { store.add(.sticky, at: store.insertionPoint, edit: true) } label: {
+                Button { store.startPlacing(.sticky) } label: {
                     Label("Sticky", systemImage: CardKind.sticky.symbol)
                 }.help("New sticky (S)")
-                Button { store.add(.note, at: store.insertionPoint, edit: true) } label: {
+                Button { store.startPlacing(.note) } label: {
                     Label("Note", systemImage: CardKind.note.symbol)
                 }.help("New note (N)")
                 Button { store.showLinkPrompt = true } label: {
                     Label("Link", systemImage: CardKind.link.symbol)
                 }.help("Add link or video (U)")
-                Button { store.add(.place, at: store.insertionPoint, edit: true) } label: {
+                Button { store.startPlacing(.place) } label: {
                     Label("Place", systemImage: CardKind.place.symbol)
                 }.help("New breadboard place (P)")
                 Button { store.pickImages() } label: {
@@ -415,6 +422,24 @@ struct CanvasView: View {
             default: return false
             }
         }
+        // Placing a new card: Esc cancels, Return drops it, S/N/P switch kind,
+        // and typing drops it and keeps the keys.
+        if store.placing != nil, !inText {
+            if event.keyCode == 53 { store.cancelPlacing(); return true }
+            if event.keyCode == 36 || event.keyCode == 76 { store.place(); return true }
+            let plain = flags.intersection([.command, .control, .option]).isEmpty
+            if plain, let key = event.charactersIgnoringModifiers?.lowercased(),
+               let kind = ["s": CardKind.sticky, "n": .note, "p": .place][key] {
+                store.startPlacing(kind)
+                return true
+            }
+            if plain, let chars = event.characters, !chars.isEmpty,
+               chars.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }),
+               event.keyCode != 49 {  // Space still pans while choosing a spot
+                store.place(typed: chars)
+                return true
+            }
+        }
         if event.keyCode == 53 { // Esc
             if store.editing != nil || store.editingConnection != nil {
                 store.editing = nil
@@ -496,10 +521,9 @@ struct CanvasView: View {
         }
 
         guard let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
-        let p = store.insertionPoint
         switch key {
-        case "s": store.add(.sticky, at: p, edit: true)
-        case "n": store.add(.note, at: p, edit: true)
+        case "s": store.startPlacing(.sticky)
+        case "n": store.startPlacing(.note)
         case "u": store.showLinkPrompt = true
         case "f":
             guard let id = store.selection.first else { return false }
@@ -515,7 +539,7 @@ struct CanvasView: View {
             if flags.contains(.shift) { store.startThreadLink() } else { store.startConnecting() }
         case "a": if !store.tidy() { NSSound.beep() }
         case "r": store.showAllReferences.toggle()
-        case "p": store.add(.place, at: p, edit: true)
+        case "p": store.startPlacing(.place)
         case "t":
             if flags.contains(.shift) { store.continueThread() } else { store.addThought() }
         case "[", "]", "<", ">", ",", ".":
@@ -769,7 +793,9 @@ struct StatusBar: View {
     var body: some View {
         HStack(spacing: 12) {
             Text("\(Int((store.scale * 100).rounded()))%")
-            if store.connectingFrom != nil {
+            if store.placing != nil {
+                Text("Click to place · or just start typing · Esc to cancel").foregroundStyle(theme.accent)
+            } else if store.connectingFrom != nil {
                 Text(store.connectingThread ? "Thread — click the card that follows from this · Esc to cancel"
                                               : "Reference — click a card · Esc to cancel")
                     .foregroundStyle(theme.accent)
@@ -1065,5 +1091,192 @@ struct ReferenceHalo: View {
             layout.moreFrame = CGRect(x: x, y: y, width: size.width, height: 22)
         }
         return layout
+    }
+}
+
+/// While a new card waits to be placed: a translucent preview of it stands
+/// in for the pointer (which is hidden over the board), and the next click
+/// puts the card there.
+struct PlacementLayer: View {
+    let store: BoardStore
+    let kind: CardKind
+    @Environment(\.theme) private var theme
+    @State private var cursorHidden = false
+    /// Tilt from horizontal movement: the leading edge pulls ahead and the
+    /// rest lags, like paper in your hand; it settles upright when you stop.
+    @State private var tilt: Double = 0
+    @State private var lastHover: (point: CGPoint, time: Date)?
+    @State private var settle = 0
+    /// Pointer speed, smoothed so small jitters don't make it twitch.
+    @State private var speed: Double = 0
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(SpatialTapGesture().onEnded { tap in
+                    store.place(at: store.toWorld(tap.location))
+                })
+            if let hover = store.hover {
+                let size = kind.defaultSize
+                PaperCard(kind: kind, pose: PaperPose.lifted.tilted(tilt), scale: store.scale)
+                    .frame(width: size.width * store.scale, height: size.height * store.scale)
+                    .position(x: hover.x, y: hover.y)
+                    .allowsHitTesting(false)
+            }
+        }
+        // The preview is the cursor: hide the pointer while it's over the board.
+        .onAppear { setCursorHidden(store.hover != nil) }
+        .onChange(of: store.hover != nil) { _, over in setCursorHidden(over) }
+        .onChange(of: store.hover) { _, point in follow(point) }
+        .onDisappear { setCursorHidden(false) }
+    }
+
+    private func follow(_ point: CGPoint?) {
+        guard let point else { lastHover = nil; return }
+        let now = Date()
+        if let last = lastHover {
+            let dt = now.timeIntervalSince(last.time)
+            if dt > 0.004 {
+                let vx = (point.x - last.point.x) / dt  // points per second
+                speed = speed * 0.8 + vx * 0.2
+                withAnimation(.interactiveSpring(response: 0.45, dampingFraction: 0.8)) {
+                    tilt = max(-5, min(5, speed * 0.003))
+                }
+                store.placingTilt = tilt
+            }
+        }
+        lastHover = (point, now)
+        // Spring back upright once the pointer rests.
+        settle += 1
+        let ticket = settle
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            guard ticket == settle else { return }
+            speed = 0
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) { tilt = 0 }
+            store.placingTilt = 0
+        }
+    }
+
+    private func setCursorHidden(_ hidden: Bool) {
+        guard hidden != cursorHidden else { return }
+        cursorHidden = hidden
+        if hidden { NSCursor.hide() } else { NSCursor.unhide() }
+    }
+}
+
+/// How a card being placed sits: lifted off the board (tilted, a touch
+/// larger, a deep shadow, its corner curled) or pressed flat onto it.
+struct PaperPose: Equatable {
+    var scale: CGFloat
+    var rotation: Double
+    var curl: CGFloat
+    var lift: CGFloat
+    var opacity: Double
+
+    static let lifted = PaperPose(scale: 1.04, rotation: 0, curl: 1, lift: 1, opacity: 0.62)
+
+    func tilted(_ degrees: Double) -> PaperPose {
+        var pose = self
+        pose.rotation = degrees
+        return pose
+    }
+    static let flat = PaperPose(scale: 1, rotation: 0, curl: 0, lift: 0, opacity: 1)
+}
+
+/// A card-shaped piece of paper for placing: the preview under the pointer
+/// and the stamp that presses down when it's placed.
+struct PaperCard: View {
+    let kind: CardKind
+    let pose: PaperPose
+    let scale: CGFloat
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let chrome = min(scale, 1)
+        let fill: SwiftUI.Color = kind == .sticky ? theme.color(.yellow) : theme.surface
+        let curlSize = 22 * chrome * pose.curl
+        GeometryReader { g in
+            let w = g.size.width, h = g.size.height
+            ZStack {
+                // The card, its bottom-right corner folded away.
+                Path { p in
+                    let r = 10 * chrome
+                    p.move(to: CGPoint(x: r, y: 0))
+                    p.addLine(to: CGPoint(x: w - r, y: 0))
+                    p.addQuadCurve(to: CGPoint(x: w, y: r), control: CGPoint(x: w, y: 0))
+                    p.addLine(to: CGPoint(x: w, y: h - max(curlSize, r)))
+                    if curlSize > 0.5 {
+                        p.addLine(to: CGPoint(x: w - curlSize, y: h))
+                    } else {
+                        p.addQuadCurve(to: CGPoint(x: w - r, y: h), control: CGPoint(x: w, y: h))
+                    }
+                    p.addLine(to: CGPoint(x: r, y: h))
+                    p.addQuadCurve(to: CGPoint(x: 0, y: h - r), control: CGPoint(x: 0, y: h))
+                    p.addLine(to: CGPoint(x: 0, y: r))
+                    p.addQuadCurve(to: CGPoint(x: r, y: 0), control: CGPoint(x: 0, y: 0))
+                    p.closeSubpath()
+                }
+                .fill(fill)
+                .shadow(color: .black.opacity((theme.isDark ? 0.3 : 0.12) + 0.2 * pose.lift),
+                        radius: (8 + 12 * pose.lift) * chrome, x: 0, y: (3 + 9 * pose.lift) * chrome)
+
+                // The curled-up corner: the back of the paper, shaded.
+                if curlSize > 0.5 {
+                    Path { p in
+                        p.move(to: CGPoint(x: w, y: h - curlSize))
+                        p.addLine(to: CGPoint(x: w - curlSize, y: h))
+                        p.addLine(to: CGPoint(x: w - curlSize * 0.92, y: h - curlSize * 0.92))
+                        p.closeSubpath()
+                    }
+                    .fill(LinearGradient(colors: [fill.opacity(0.95), .black.opacity(0.25)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .shadow(color: .black.opacity(0.25), radius: 3 * chrome, x: -1, y: -1)
+                }
+
+                Label(kind.label, systemImage: kind.symbol)
+                    .font(.system(size: 12 * chrome, weight: .medium))
+                    .foregroundStyle((kind == .sticky ? theme.ink : theme.text).opacity(0.45 * (1 - (pose.opacity - 0.62) / 0.38)))
+            }
+        }
+        .opacity(pose.opacity)
+        .scaleEffect(pose.scale)
+        .rotationEffect(.degrees(pose.rotation))
+    }
+}
+
+/// After placing: the lifted preview presses down onto the new card (a
+/// squash, a spring back, the curl flattening) and hands over to it.
+struct PlacementStamp: View {
+    let store: BoardStore
+    let stamp: BoardStore.Stamp
+    @State private var pressed = false
+
+    var body: some View {
+        let size = stamp.kind.defaultSize
+        let center = CGPoint(x: stamp.center.x * store.scale + store.offset.x,
+                             y: stamp.center.y * store.scale + store.offset.y)
+        PaperCard(kind: stamp.kind, pose: PaperPose.lifted.tilted(stamp.rotation), scale: store.scale)
+            .keyframeAnimator(initialValue: PaperPose.lifted.tilted(stamp.rotation), trigger: pressed) { _, pose in
+                PaperCard(kind: stamp.kind, pose: pose, scale: store.scale)
+            } keyframes: { _ in
+                KeyframeTrack(\.scale) {
+                    CubicKeyframe(0.96, duration: 0.11)
+                    SpringKeyframe(1.0, duration: 0.2, spring: .snappy)
+                }
+                KeyframeTrack(\.rotation) { CubicKeyframe(0, duration: 0.12) }
+                KeyframeTrack(\.curl) { CubicKeyframe(0, duration: 0.14) }
+                KeyframeTrack(\.lift) { CubicKeyframe(0, duration: 0.12) }
+                KeyframeTrack(\.opacity) { CubicKeyframe(1, duration: 0.1) }
+            }
+            .frame(width: size.width * store.scale, height: size.height * store.scale)
+            .position(center)
+            .allowsHitTesting(false)
+            .onAppear {
+                pressed = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) {
+                    if store.stamp?.id == stamp.id { store.stamp = nil }
+                }
+            }
     }
 }

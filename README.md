@@ -44,6 +44,11 @@ Everything lives in `~/Commonplace/<Board>/`:
 
 Markdown files dropped into `cards/` by hand appear on the board on next open.
 
+## Adding cards
+
+**S** (sticky), **N** (note) or **P** (place) shows a preview that follows the pointer: click to put
+it there, or just start typing and it drops where the preview is. Return places it; Esc cancels.
+
 ## Moving around
 
 Arrows (or **h j k l**) follow threads first: **←** to what the card follows from, **→** to its first
