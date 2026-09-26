@@ -204,7 +204,7 @@ struct CardView: View {
         let empty = card.body.isEmpty
         return MarkdownText(
             text: empty ? (placeholder ?? "") : card.body,
-            size: size * s,
+            size: size * t,
             color: empty ? (card.kind == .sticky ? ink.opacity(0.5) : theme.muted) : ink,
             accent: card.kind == .sticky ? ink : theme.accent,
             onSeek: store.videoID(for: card.id).map { video in { store.video(video).seek($0) } })
@@ -214,9 +214,18 @@ struct CardView: View {
 
     /// Zoomed out, cards trade detail for legibility: a readable headline
     /// rather than shrunken paragraphs, and a still frame rather than a player.
+    /// Zoomed far out, a video shows its poster instead of a live player.
     private var overview: Bool {
-        guard !isEditing, card.kind != .image else { return false }
-        return s < (card.kind == .video ? BoardStore.overviewZoom : BoardStore.summaryZoom)
+        !isEditing && card.kind == .video && s < BoardStore.overviewZoom
+    }
+
+    /// Text scale: card text renders exactly as in full detail (same bold,
+    /// bullets and timestamp chips), but below 75% zoom it holds at a readable
+    /// size instead of shrinking with the card, and the card shows as much as
+    /// fits; far out it eases down to a small floor.
+    private var t: CGFloat {
+        if isEditing || s >= BoardStore.summaryZoom { return s }
+        return max(min(BoardStore.summaryZoom, s / 0.6), 0.55)
     }
 
     /// Zoomed far enough out that small chrome would be unreadable.
@@ -245,58 +254,18 @@ struct CardView: View {
     /// summary range and only shrinks, to an 8pt floor, when zoomed far out.
     private var overviewFont: CGFloat { min(13, max(8, 30 * s)) }
 
-    @ViewBuilder private var overviewCard: some View {
-        if card.kind == .video {
-            Color.black
-                .overlay {
-                    if let url = card.posterURL {
-                        AsyncImage(url: url) { phase in
-                            phase.image?.resizable().aspectRatio(contentMode: .fill)
-                        }
+    /// A video far out: its poster and title instead of a live player.
+    private var overviewCard: some View {
+        Color.black
+            .overlay {
+                if let url = card.posterURL {
+                    AsyncImage(url: url) { phase in
+                        phase.image?.resizable().aspectRatio(contentMode: .fill)
                     }
                 }
-                .overlay(alignment: .bottomLeading) { overviewLabel(icon: "play.fill", onImage: true) }
-                .clipped()
-        } else {
-            VStack(alignment: .leading, spacing: overviewFont * 0.35) {
-                overviewLabel(icon: card.kind == .sticky ? nil : card.kind.symbol, onImage: false)
-                if !excerpt.isEmpty {
-                    Text(excerpt)
-                        .font(.system(size: overviewFont * 0.92))
-                        .foregroundStyle(card.kind == .sticky ? ink.opacity(0.85) : theme.muted)
-                        .lineSpacing(overviewFont * 0.1)
-                        .padding(.horizontal, overviewFont * 0.5)
-                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .overlay(alignment: .bottomLeading) { overviewLabel(icon: "play.fill", onImage: true) }
             .clipped()
-        }
-    }
-
-    /// The rest of the card's text as plain lines, for the summary view.
-    private var excerpt: String {
-        var lines: [String]
-        switch card.kind {
-        case .link: lines = [card.summary ?? ""]
-        case .place: lines = Place.affordances(card.body).map { "• " + $0 }
-        default:
-            lines = card.body.components(separatedBy: "\n")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-            // The headline already shows the first line when there's no title.
-            if card.title.isEmpty, !lines.isEmpty { lines.removeFirst() }
-            lines = lines.map { line in
-                var text = line
-                if text.hasPrefix("#") { text = String(text.drop { $0 == "#" }).trimmingCharacters(in: .whitespaces) }
-                for (prefix, bullet) in [("- [ ] ", "☐ "), ("- [x] ", "☑ "), ("- ", "• "), ("* ", "• "), ("> ", "")]
-                where text.hasPrefix(prefix) {
-                    text = bullet + text.dropFirst(prefix.count)
-                    break
-                }
-                return text.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "")
-            }
-        }
-        return String(lines.joined(separator: "\n").prefix(700))
     }
 
     private func overviewLabel(icon: String?, onImage: Bool) -> some View {
@@ -336,7 +305,7 @@ struct CardView: View {
             } else {
                 if !card.title.isEmpty {
                     Text(card.title)
-                        .font(.system(size: 18 * s, weight: .semibold))
+                        .font(.system(size: 18 * t, weight: .semibold))
                         .foregroundStyle(theme.text)
                 }
                 markdown(14, placeholder: card.title.isEmpty ? "Double-click to write" : nil)
@@ -365,11 +334,11 @@ struct CardView: View {
             }
             VStack(alignment: .leading, spacing: 6 * s) {
                 if let host = card.url.flatMap(URL.init(string:))?.host {
-                    Text(host).font(.system(size: 11 * s)).foregroundStyle(theme.accent)
+                    Text(host).font(.system(size: 11 * t)).foregroundStyle(theme.accent)
                 }
                 if let summary = card.summary {
                     Text(summary)
-                        .font(.system(size: 12.5 * s))
+                        .font(.system(size: 12.5 * t))
                         .foregroundStyle(theme.muted)
                         .lineLimit(4)
                 }
@@ -453,7 +422,7 @@ struct CardView: View {
             markdown(13.5)
         } else if isSelected, card.kind != .video {
             Text("Double-click to add notes")
-                .font(.system(size: 12 * s))
+                .font(.system(size: 12 * t))
                 .foregroundStyle(theme.muted)
         }
     }
@@ -473,7 +442,7 @@ struct CardView: View {
                                takePending: store.takePendingTyping)
             } else {
                 Text(card.title.isEmpty ? "Place" : card.title)
-                    .font(.system(size: 16 * s, weight: .semibold))
+                    .font(.system(size: 16 * t, weight: .semibold))
                     .underline()
                     .foregroundStyle(card.title.isEmpty ? theme.muted : theme.text)
                     .lineLimit(1)
@@ -481,7 +450,7 @@ struct CardView: View {
                 ForEach(Array(Place.affordances(card.body).enumerated()), id: \.offset) { _, item in
                     HStack(spacing: 6 * s) {
                         Text(item)
-                            .font(.system(size: 13.5 * s))
+                            .font(.system(size: 13.5 * t))
                             .foregroundStyle(theme.text)
                             .lineLimit(1)
                         Spacer(minLength: 4 * s)
