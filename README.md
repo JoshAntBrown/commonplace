@@ -1,3 +1,5 @@
+<img src="docs/images/icon.png" width="128" alt="Commonplace icon">
+
 # Commonplace
 
 A canvas for thinking, for macOS. Collect references (YouTube and X videos, links, images, quotes
