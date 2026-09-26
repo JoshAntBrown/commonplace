@@ -847,14 +847,23 @@ final class BoardStore {
             return addThoughtAtCurrentTime(parent)
         }
         // Otherwise the next card directly below, sharing the parent (if any).
-        let frame = CGRect(x: current.frame.minX, y: current.frame.maxY + 24, width: current.frame.width, height: 130)
+        var frame = CGRect(x: current.frame.minX, y: current.frame.maxY + 24, width: current.frame.width, height: 130)
+        let after = current.parent.map { parent in
+            children(of: parent).filter { $0.id != id && $0.frame.minY > current.frame.minY }
+        } ?? []
+        // Clear of any other card in the way (the thoughts after it move instead).
+        let moving = Set(after.flatMap { [$0.id] + descendants(of: $0.id) })
+        for _ in 0..<500 {
+            guard let blocker = board.cards.first(where: {
+                $0.id != id && !moving.contains($0.id) && $0.frame.insetBy(dx: -8, dy: -8).intersects(frame)
+            }) else { break }
+            frame.origin.y = blocker.frame.maxY + 16
+        }
         // Inserting mid-thread: the thoughts after it slide down to make room,
         // taking their own thoughts with them.
-        if let parent = current.parent {
-            let after = children(of: parent).filter { $0.id != id && $0.frame.minY > current.frame.minY }
+        if current.parent != nil {
             if let first = after.first, frame.maxY + 24 > first.frame.minY {
                 let shift = frame.maxY + 24 - first.frame.minY
-                let moving = Set(after.flatMap { [$0.id] + descendants(of: $0.id) })
                 checkpoint()
                 withAnimation(.easeInOut(duration: 0.25)) {
                     for i in board.cards.indices where moving.contains(board.cards[i].id) {

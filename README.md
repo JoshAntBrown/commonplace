@@ -11,6 +11,13 @@ through a built-in MCP server.
 Inspired by commonplace books, Niklas Luhmann's Zettelkasten, Christopher Alexander's pattern
 languages and Ryan Singer's Shape Up, without being a tool for any one of them.
 
+![A Commonplace board: a question with a thread of thoughts, link cards with previews, a Shape Up breadboard, and a video with timestamped thoughts](docs/images/hero.png)
+
+![Moving with the arrow keys, adding a thought with T and the next one with ⇧T](docs/images/demo.gif)
+
+<sub>Demo board built with `scripts/demo-board.sh`. Video: *Big Buck Bunny* © Blender Foundation,
+CC BY 3.0. Link previews from basecamp.com and Wikipedia.</sub>
+
 ## Requirements
 
 - macOS 14 or later

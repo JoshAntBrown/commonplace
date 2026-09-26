@@ -288,9 +288,16 @@ struct CanvasView: View {
         guard let window = event.window, window.attachedSheet == nil else { return false }
         let inText = window.firstResponder is NSText
         // Typing into a web page, or Space on a focused video player, belongs to it.
+        // Esc on a card's video (which can take focus when it loads) hands the
+        // keyboard back to the board; the browser and terminal keep their Esc.
         var responder = window.firstResponder as? NSView
         while let v = responder {
-            if v is WKWebView || v is AVPlayerView || v is TerminalView { return false }
+            if v is TerminalView || v is ClipWebView { return false }
+            if v is WKWebView || v is AVPlayerView {
+                guard event.keyCode == 53 else { return false }
+                window.makeFirstResponder(nil)
+                return true
+            }
             responder = v.superview
         }
         let flags = event.modifierFlags
