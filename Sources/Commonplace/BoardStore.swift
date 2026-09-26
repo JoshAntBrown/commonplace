@@ -857,6 +857,14 @@ final class BoardStore {
             return addThoughtAtCurrentTime(parent)
         }
         // Otherwise the next card directly below, sharing the parent (if any).
+        if let next = insertCard(after: id, interactive: true) { beginEditing(next) }
+    }
+
+    /// A new sticky directly below `id`, sharing its parent. The thoughts after
+    /// it slide down to make room, taking their own thoughts with them.
+    @discardableResult
+    func insertCard(after id: UUID, interactive: Bool) -> UUID? {
+        guard let current = card(id) else { return nil }
         var frame = CGRect(x: current.frame.minX, y: current.frame.maxY + 24, width: current.frame.width, height: 130)
         let after = current.parent.map { parent in
             children(of: parent).filter { $0.id != id && $0.frame.minY > current.frame.minY }
@@ -882,11 +890,10 @@ final class BoardStore {
                 }
             }
         }
-        let next = add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY)) {
+        return add(.sticky, at: CGPoint(x: frame.midX, y: frame.midY), select: interactive) {
             $0.frame = frame
             $0.parent = current.parent
         }
-        beginEditing(next)
     }
 
     /// A: tidy the selected card's thoughts, one level deep.
@@ -1136,8 +1143,36 @@ final class BoardStore {
 
     /// The card open in the focus view, if any.
     var focusID: UUID?
-    /// Bumped to put the cursor in the focus view's "Add a thought" box.
-    var focusComposerRequest = 0
+    /// Bumped when Return is pressed while typing in the focus view: whichever
+    /// field has the cursor finishes (adds the thought, or saves the edit).
+    var focusSubmitRequest = 0
+    /// The thought selected in the focus view's list, and one asked to start editing.
+    var focusSelectedThought: UUID?
+    var focusEditRequest: UUID?
+    /// Bumped as a thought being edited grows, so the list keeps it in view.
+    var focusGrowth = 0
+
+    /// ↑ / ↓ in the focus view: move the selection through the thoughts.
+    func moveFocusSelection(by step: Int) {
+        guard let id = focusID else { return }
+        let thoughts = orderedThoughts(of: id).map(\.id)
+        guard !thoughts.isEmpty else { return }
+        if let current = focusSelectedThought, let i = thoughts.firstIndex(of: current) {
+            focusSelectedThought = thoughts[max(0, min(thoughts.count - 1, i + step))]
+        } else {
+            focusSelectedThought = step > 0 ? thoughts.first : thoughts.last
+        }
+    }
+
+    /// Delete in the focus view: remove the selected thought, selecting the next.
+    func deleteFocusSelection() {
+        guard let id = focusID, let thought = focusSelectedThought else { return NSSound.beep() }
+        let thoughts = orderedThoughts(of: id).map(\.id)
+        let i = thoughts.firstIndex(of: thought) ?? 0
+        deleteCards([thought])
+        let rest = orderedThoughts(of: id).map(\.id)
+        focusSelectedThought = rest.isEmpty ? nil : rest[min(i, rest.count - 1)]
+    }
 
     func focus(_ id: UUID) {
         guard let card = card(id) else { return }
@@ -1145,6 +1180,8 @@ final class BoardStore {
         if card.kind == .video { video(id).resumeAt = card.position }
         editing = nil
         selection = [id]
+        focusSelectedThought = nil
+        focusEditRequest = nil
         focusID = id
     }
 
@@ -1158,16 +1195,32 @@ final class BoardStore {
 
     /// A thought from the focus view's box: threaded from the focused card,
     /// placed on the board beside it; on a video it gets the current time.
-    func addFocusThought(_ text: String) {
+    /// T in the focus view: a new thought in the list, ready to type (on a
+    /// video, starting with the current time), exactly as T does on the board.
+    func addFocusThought() {
         guard let id = focusID, let card = card(id) else { return }
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let edit = { [weak self] (new: UUID?) in
+            guard let self, let new else { return }
+            self.focusSelectedThought = new
+            self.focusEditRequest = new
+        }
         if card.kind == .video {
             video(id).currentTime { [weak self] t in
-                self?.placeThought(from: id, body: "[\(Timestamp.format(t))] " + text, interactive: false)
+                edit(self?.placeThought(from: id, body: "[\(Timestamp.format(t))] ", interactive: false))
             }
         } else {
-            placeThought(from: id, body: text, interactive: false)
+            edit(placeThought(from: id, body: "", interactive: false))
+        }
+    }
+
+    /// ⇧T in the focus view: the next thought after the selected one.
+    func continueFocusThought() {
+        guard let id = focusID, let selected = focusSelectedThought, card(id)?.kind != .video else {
+            return addFocusThought()
+        }
+        if let new = insertCard(after: selected, interactive: false) {
+            focusSelectedThought = new
+            focusEditRequest = new
         }
     }
 

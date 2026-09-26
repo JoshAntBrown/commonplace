@@ -8,9 +8,9 @@ struct FocusView: View {
     let store: BoardStore
     let card: Card
     @Environment(\.theme) private var theme
-    @State private var draft = ""
     @State private var editing = false
-    @FocusState private var composerFocused: Bool
+    @FocusState private var bodyFocused: Bool
+    @State private var rowFrames: [UUID: CGRect] = [:]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -30,11 +30,13 @@ struct FocusView: View {
         }
         // Opaque, so the board behind never shows through.
         .background(theme.background)
-        .onChange(of: store.focusComposerRequest) { _, _ in composerFocused = true }
+        .onChange(of: store.focusSubmitRequest) { _, _ in
+            if bodyFocused { editing = false }
+        }
         // Don't let the thought box grab the cursor on its own: T puts you there,
         // and single-key shortcuts keep working until then.
         .onAppear { DispatchQueue.main.async { NSApp.keyWindow?.makeFirstResponder(nil) } }
-        .onChange(of: card.id) { _, _ in editing = false; draft = "" }
+        .onChange(of: card.id) { _, _ in editing = false }
     }
 
     // MARK: Header
@@ -149,10 +151,12 @@ struct FocusView: View {
                                          set: { v in store.editText(card.id) { $0.body = v } }))
                     .font(.system(size: 16))
                     .scrollContentBackground(.hidden)
+                    .focused($bodyFocused)
+                    .onAppear { DispatchQueue.main.async { bodyFocused = true } }
                     .frame(minHeight: 220)
                     .padding(8)
                     .background(theme.surface, in: RoundedRectangle(cornerRadius: 8))
-                Button("Done") { editing = false }.keyboardShortcut(.return, modifiers: .command)
+                Text("Return to finish · ⇧Return for a new line").font(.caption).foregroundStyle(theme.muted)
             }
         } else {
             MarkdownText(text: card.body.isEmpty ? "Double-click to write" : card.body, size: 16,
@@ -173,7 +177,7 @@ struct FocusView: View {
     // MARK: Sidebar
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        GeometryReader { viewport in ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let parentID = card.parent, let parent = store.card(parentID) {
@@ -182,11 +186,24 @@ struct FocusView: View {
                     section("Thoughts") {
                         let thoughts = store.orderedThoughts(of: card.id)
                         if thoughts.isEmpty {
-                            Text(card.kind == .video ? "Add a thought as you watch; it gets the current time."
-                                                     : "Nothing yet.")
+                            Text(card.kind == .video ? "Press T to add a thought at the current time."
+                                                     : "Press T to add a thought.")
                                 .font(.system(size: 12)).foregroundStyle(theme.muted)
                         }
-                        ForEach(thoughts) { thought in thoughtRow(thought) }
+                        ForEach(thoughts) { thought in
+                            thoughtRow(thought)
+                                // Zero-height markers at the row's edges to scroll to.
+                                .overlay(alignment: .top) {
+                                    Color.clear.frame(height: 0).id(Self.edge(thought.id, top: true))
+                                }
+                                .overlay(alignment: .bottom) {
+                                    Color.clear.frame(height: 0).id(Self.edge(thought.id, top: false))
+                                }
+                                .background(GeometryReader { g in
+                                    Color.clear.preference(key: RowFrames.self,
+                                                           value: [thought.id: g.frame(in: .named(Self.space))])
+                                })
+                        }
                     }
                     let refs = store.references(of: card.id)
                     if !refs.isEmpty {
@@ -202,8 +219,56 @@ struct FocusView: View {
                 }
                 .padding(16)
             }
-            Divider()
-            composer
+            .coordinateSpace(name: Self.space)
+            .onPreferenceChange(RowFrames.self) { rowFrames = $0 }
+            // Scroll padding: keep the selected thought at least `margin` inside the
+            // visible area — new ones from T, j/k/arrows, and as an edit grows.
+            .onChange(of: store.focusSelectedThought) { _, id in
+                guard let id else { return }
+                reveal(id, proxy: proxy, height: viewport.size.height, animated: true)
+            }
+            .onChange(of: store.focusGrowth) { _, _ in
+                guard let id = store.focusSelectedThought else { return }
+                reveal(id, proxy: proxy, height: viewport.size.height, animated: false)
+            }
+        } }
+    }
+
+    private static let space = "thoughts"
+    private static let scrollMargin: CGFloat = 72
+
+    private static func edge(_ id: UUID, top: Bool) -> String { (top ? "top-" : "bottom-") + id.uuidString }
+
+    /// Scrolls only if the thought is closer than `scrollMargin` to an edge,
+    /// and then only far enough to restore the margin. Waits a beat for
+    /// layout, so new and growing rows are measured at their real size.
+    private func reveal(_ id: UUID, proxy: ScrollViewProxy, height: CGFloat, animated: Bool) {
+        DispatchQueue.main.async {
+            DispatchQueue.main.async {
+                guard height > 0, let frame = rowFrames[id] else { return }
+                let m = min(Self.scrollMargin, height / 3)
+                let target: (String, UnitPoint)?
+                if frame.maxY > height - m {
+                    target = (Self.edge(id, top: false), UnitPoint(x: 0.5, y: (height - m) / height))
+                } else if frame.minY < m {
+                    target = (Self.edge(id, top: true), UnitPoint(x: 0.5, y: m / height))
+                } else {
+                    target = nil
+                }
+                guard let (marker, anchor) = target else { return }
+                if animated {
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(marker, anchor: anchor) }
+                } else {
+                    proxy.scrollTo(marker, anchor: anchor)
+                }
+            }
+        }
+    }
+
+    private struct RowFrames: PreferenceKey {
+        static let defaultValue: [UUID: CGRect] = [:]
+        static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+            value.merge(nextValue()) { $1 }
         }
     }
 
@@ -234,12 +299,42 @@ struct FocusView: View {
         .buttonStyle(.plain)
     }
 
-    /// A thought, in full: timestamps seek the video; the arrow focuses it.
     private func thoughtRow(_ thought: Card) -> some View {
+        FocusThoughtRow(store: store, thought: thought, videoID: card.kind == .video ? card.id : nil)
+    }
+}
+
+/// A thought in the focus view's list, behaving like a card on the board:
+/// click selects, double-click (or Return) edits, Delete removes. While
+/// editing, Return finishes and ⇧Return adds a line. A timestamp still seeks
+/// the video, and the arrow focuses the thought itself.
+private struct FocusThoughtRow: View {
+    let store: BoardStore
+    let thought: Card
+    let videoID: UUID?
+    @Environment(\.theme) private var theme
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    private var selected: Bool { store.focusSelectedThought == thought.id }
+
+    var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            MarkdownText(text: thought.body.isEmpty ? thought.headline : thought.body, size: 13,
-                         color: theme.text, accent: theme.accent,
-                         onSeek: card.kind == .video ? { store.video(card.id).seek($0) } : nil)
+            if editing {
+                TextField("Thought", text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.text)
+                    .focused($focused)
+                    .onChange(of: focused) { _, isFocused in if !isFocused { save() } }
+                    .onChange(of: store.focusSubmitRequest) { _, _ in if focused { save() } }
+                    .onChange(of: draft) { _, _ in store.focusGrowth += 1 }
+            } else {
+                MarkdownText(text: thought.body.isEmpty ? thought.headline : thought.body, size: 13,
+                             color: theme.text, accent: theme.accent,
+                             onSeek: videoID.map { id in { store.video(id).seek($0) } })
+            }
             Button { store.focus(thought.id) } label: {
                 Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(theme.muted)
                     .frame(width: 18, height: 18)
@@ -248,27 +343,51 @@ struct FocusView: View {
             .help("Focus this thought")
         }
         .padding(10)
-        .background(theme.color(thought.color == .none ? .yellow : thought.color).opacity(0.16),
+        .background(theme.color(thought.color == .none ? .yellow : thought.color).opacity(editing ? 0.26 : 0.16),
                     in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(theme.accent, lineWidth: selected || editing ? 2 : 0))
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { beginEditing() }
+        .onTapGesture {
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            store.focusSelectedThought = thought.id
+        }
+        .contextMenu {
+            Button("Edit") { beginEditing() }
+            Button("Focus") { store.focus(thought.id) }
+            Divider()
+            Button("Delete", role: .destructive) {
+                store.focusSelectedThought = thought.id
+                store.deleteFocusSelection()
+            }
+        }
+        .onChange(of: store.focusEditRequest) { _, id in
+            if id == thought.id { store.focusEditRequest = nil; beginEditing() }
+        }
+        // A thought just made with T asks to be edited before its row exists.
+        .onAppear {
+            if store.focusEditRequest == thought.id { store.focusEditRequest = nil; beginEditing() }
+        }
     }
 
-    private var composer: some View {
-        HStack(spacing: 8) {
-            TextField(card.kind == .video ? "Add a thought at the current time…" : "Add a thought…",
-                      text: $draft)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .focused($composerFocused)
-                .onSubmit {
-                    store.addFocusThought(draft)
-                    draft = ""
-                    composerFocused = true
-                }
-            Text("T").font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(theme.muted)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.border))
+    private func beginEditing() {
+        store.focusSelectedThought = thought.id
+        draft = thought.body
+        editing = true
+        DispatchQueue.main.async {
+            focused = true
+            // Type after any existing text (e.g. a timestamp), not over it.
+            DispatchQueue.main.async {
+                guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+                editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+            }
         }
-        .padding(14)
+    }
+
+    private func save() {
+        guard editing else { return }
+        editing = false
+        if draft != thought.body { store.editText(thought.id) { $0.body = draft } }
     }
 }

@@ -301,6 +301,12 @@ struct CanvasView: View {
         var responder = window.firstResponder as? NSView
         while let v = responder {
             if v is TerminalView || v is ClipWebView { return false }
+            // In the focus view, its keys win even over the card's own player,
+            // which can take the keyboard when it loads or is clicked.
+            if v is WKWebView || v is AVPlayerView, store.focusID != nil {
+                window.makeFirstResponder(nil)
+                break
+            }
             if v is WKWebView || v is AVPlayerView {
                 guard event.keyCode == 53 else { return false }
                 window.makeFirstResponder(nil)
@@ -314,11 +320,24 @@ struct CanvasView: View {
         // T jumps to the "Add a thought" box, [ ] change a video's speed.
         if store.focusID != nil {
             if event.keyCode == 53 {
-                // First Esc leaves the text box; the next leaves focus.
+                // Esc steps back: out of the text box, then off the selected
+                // thought, then out of focus.
                 if inText {
                     window.makeFirstResponder(nil)
+                } else if store.focusSelectedThought != nil {
+                    store.focusSelectedThought = nil
                 } else {
                     withAnimation(.easeOut(duration: 0.15)) { store.exitFocus() }
+                }
+                return true
+            }
+            // Typing works as on the board: Return finishes, ⇧Return is a new line.
+            if inText, event.keyCode == 36 || event.keyCode == 76,
+               (window.firstResponder as? NSTextView)?.hasMarkedText() != true {
+                if flags.contains(.shift) {
+                    (window.firstResponder as? NSTextView)?.insertNewlineIgnoringFieldEditor(nil)
+                } else {
+                    store.focusSubmitRequest += 1
                 }
                 return true
             }
@@ -326,6 +345,17 @@ struct CanvasView: View {
             guard let id = store.focusID else { return false }
             let isVideo = store.card(id)?.kind == .video
             // A video in focus gets YouTube's keys: Space, ← →, < >.
+            // The thoughts list works like the board: ↑ ↓ select, Return edits,
+            // Delete removes.
+            switch event.keyCode {
+            case 125: store.moveFocusSelection(by: 1); return true
+            case 126: store.moveFocusSelection(by: -1); return true
+            case 51, 117: store.deleteFocusSelection(); return true
+            case 36, 76:
+                if let thought = store.focusSelectedThought { store.focusEditRequest = thought }
+                return true
+            default: break
+            }
             if isVideo {
                 switch event.keyCode {
                 case 49: store.video(id).togglePlay(); return true
@@ -335,7 +365,12 @@ struct CanvasView: View {
                 }
             }
             switch event.characters {
-            case "t", "T": store.focusComposerRequest += 1; return true
+            case "j": store.moveFocusSelection(by: 1); return true
+            case "k": store.moveFocusSelection(by: -1); return true
+            case "h": if isVideo { store.video(id).skip(by: -5) }; return true
+            case "l": if isVideo { store.video(id).skip(by: 5) }; return true
+            case "t": store.addFocusThought(); return true
+            case "T": store.continueFocusThought(); return true
             case "[", "<", ",": if isVideo { store.stepSpeed(id, up: false) }; return true
             case "]", ">", ".": if isVideo { store.stepSpeed(id, up: true) }; return true
             default: return false
@@ -712,7 +747,8 @@ struct HelpOverlay: View {
         ("C · ⇧C", "Reference → click target · thread → click what follows"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
         ("Affordance dot", "Connect that affordance → click a place"), ("F", "Focus the selected card: large, with its thoughts and references"),
-        ("In focus on a video", "Space play/pause · ← → 5 s · < > speed · T thought · Esc back"),
+        ("In focus", "T thought · ⇧T next · ↑ ↓ / j k select · Return edit · Delete remove · Esc back"),
+        ("In focus on a video", "Space play/pause · ← → / h l 5 s · < > speed"),
         ("T · ⇧T", "Thought about the selection · next thought after it (on a video: at the current time)"),
         ("A", "Line up the selected card's thoughts"),
         ("R", "Show every reference as a line"),

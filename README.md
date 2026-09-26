@@ -55,9 +55,9 @@ the selection); **⌘=** / **⌘−** zoom.
 
 Press **F** (or right-click → Focus) to open one card up close: a video plays large, a note or
 image fills the space. Beside it: what it follows from, its thoughts (a video's in time order, with
-clickable timestamps), its references, and an "Add a thought" box (**T** to jump there; Return adds,
-on a video at the current time). Choosing any card in the panel focuses it instead. **Esc** goes
-back to the board. With a video in focus: **Space** plays/pauses, **← →** skip 5 s, **< >** change speed.
+clickable timestamps), its references. Thoughts work like cards on the board: click to select, double-click or Return to edit, Delete to
+remove, ↑ ↓ (or j k) to move, **T** / **⇧T** to add a thought or the next one. Choosing any other card in the panel focuses it instead. **Esc** goes
+back to the board. With a video in focus: **Space** plays/pauses, **← →** (or h l) skip 5 s, **< >** change speed.
 
 ## Copy and paste
 
