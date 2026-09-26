@@ -129,6 +129,25 @@ final class VideoController {
         }
         webView?.evaluateJavaScript("window.cpSeek && cpSeek(\(seconds)); 0", completionHandler: nil)
     }
+
+    /// Space in the focus view.
+    func togglePlay() {
+        if let player {
+            if player.rate == 0 { player.play() } else { player.pause() }
+            return
+        }
+        webView?.evaluateJavaScript("window.cpToggle && cpToggle(); 0", completionHandler: nil)
+    }
+
+    /// ← / → in the focus view: jump without changing whether it's playing.
+    func skip(by delta: Double) {
+        if let player {
+            let t = max(0, player.currentTime().seconds + delta)
+            player.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+            return
+        }
+        webView?.evaluateJavaScript("window.cpSkip && cpSkip(\(delta)); 0", completionHandler: nil)
+    }
 }
 
 struct WebVideoView: NSViewRepresentable {
@@ -143,6 +162,8 @@ struct WebVideoView: NSViewRepresentable {
           window.cpRateValue = \(rate);
           window.cpTime = function () { var v = document.querySelector('video'); return v ? v.currentTime : 0; };
           window.cpSeek = function (s) { var v = document.querySelector('video'); if (v) { v.currentTime = s; v.play(); } };
+          window.cpToggle = function () { var v = document.querySelector('video'); if (v) { if (v.paused) { v.play(); } else { v.pause(); } } };
+          window.cpSkip = function (d) { var v = document.querySelector('video'); if (v) { v.currentTime = Math.max(0, v.currentTime + d); } };
           window.cpRate = function (r) {
             window.cpRateValue = r;
             document.querySelectorAll('video').forEach(function (v) { v.playbackRate = r; });
@@ -223,6 +244,11 @@ struct WebVideoView: NSViewRepresentable {
         }, 5000);
         function cpTime() { return player && player.getCurrentTime ? player.getCurrentTime() : 0; }
         function cpSeek(s) { if (player && player.seekTo) { player.seekTo(s, true); player.playVideo(); } }
+        function cpToggle() {
+          if (!player || !player.getPlayerState) { return; }
+          if (player.getPlayerState() === 1) { player.pauseVideo(); } else { player.playVideo(); }
+        }
+        function cpSkip(d) { if (player && player.seekTo) { player.seekTo(Math.max(0, player.getCurrentTime() + d), true); } }
         </script></body></html>
         """
     }

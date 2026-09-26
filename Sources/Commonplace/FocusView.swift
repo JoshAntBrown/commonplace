@@ -51,7 +51,7 @@ struct FocusView: View {
             if card.kind == .video {
                 Button(CardView.speedLabel(card.speed)) { store.stepSpeed(card.id, up: true) }
                     .monospacedDigit()
-                    .help("Playback speed ([ and ])")
+                    .help("Playback speed (< and >)")
             }
             if let url = card.url.flatMap(URL.init(string:)) {
                 Button { NSWorkspace.shared.open(url) } label: { Image(systemName: "arrow.up.right.square") }

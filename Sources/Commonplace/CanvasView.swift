@@ -134,7 +134,7 @@ struct CanvasView: View {
                 }.help("Terminal for agents (⌃`)")
                 Button { store.zoomToFit() } label: {
                     Label("Fit", systemImage: "arrow.up.left.and.arrow.down.right")
-                }.help("Zoom to fit (F)")
+                }.help("Fit the board (⌘1)")
                 Button { store.showHelp.toggle() } label: {
                     Label("Shortcuts", systemImage: "keyboard")
                 }.help("Shortcuts (?)")
@@ -323,11 +323,21 @@ struct CanvasView: View {
                 return true
             }
             if inText || flags.contains(.command) { return false }
-            switch event.charactersIgnoringModifiers?.lowercased() {
-            case "t": store.focusComposerRequest += 1; return true
-            case "[", "]":
-                if let id = store.focusID { store.stepSpeed(id, up: event.charactersIgnoringModifiers == "]") }
-                return true
+            guard let id = store.focusID else { return false }
+            let isVideo = store.card(id)?.kind == .video
+            // A video in focus gets YouTube's keys: Space, ← →, < >.
+            if isVideo {
+                switch event.keyCode {
+                case 49: store.video(id).togglePlay(); return true
+                case 123: store.video(id).skip(by: -5); return true
+                case 124: store.video(id).skip(by: 5); return true
+                default: break
+                }
+            }
+            switch event.characters {
+            case "t", "T": store.focusComposerRequest += 1; return true
+            case "[", "<", ",": if isVideo { store.stepSpeed(id, up: false) }; return true
+            case "]", ">", ".": if isVideo { store.stepSpeed(id, up: true) }; return true
             default: return false
             }
         }
@@ -369,6 +379,11 @@ struct CanvasView: View {
             switch event.charactersIgnoringModifiers?.lowercased() {
             case "v": store.paste(); return true
             case "a": store.selectAll(); return true
+            case "0": store.resetZoom(); return true
+            case "1": store.zoomToFit(); return true
+            case "2": store.zoomToFit(selectionOnly: true); return true
+            case "=", "+": store.zoom(by: 1.25); return true
+            case "-": store.zoom(by: 1 / 1.25); return true
             case "c": store.copySelection(); return true
             case "x": store.cutSelection(); return true
             case "d": store.duplicateSelection(); return true
@@ -405,7 +420,7 @@ struct CanvasView: View {
         case "s": store.add(.sticky, at: p, edit: true)
         case "n": store.add(.note, at: p, edit: true)
         case "u": store.showLinkPrompt = true
-        case "o":
+        case "f":
             guard let id = store.selection.first else { return false }
             withAnimation(.easeOut(duration: 0.15)) { store.focus(id) }
         case "h": store.navigate(.left)
@@ -426,10 +441,6 @@ struct CanvasView: View {
         case "b":
             let defaults = UserDefaults.standard
             defaults.set(!defaults.bool(forKey: "showBrowser"), forKey: "showBrowser")
-        case "f": store.zoomToFit()
-        case "0": store.resetZoom()
-        case "=", "+": store.zoom(by: 1.25)
-        case "-": store.zoom(by: 1 / 1.25)
         case "?", "/": store.showHelp.toggle()
         default:
             guard let n = Int(key), (1...7).contains(n) else { return false }
@@ -700,7 +711,8 @@ struct HelpOverlay: View {
         ("⌘V", "Paste URL, image or text"), ("Double-click", "Sticky on canvas / edit card"),
         ("C · ⇧C", "Reference → click target · thread → click what follows"), ("P", "New breadboard place"),
         ("B", "Browser: search, drag or right-click to add"),
-        ("Affordance dot", "Connect that affordance → click a place"), ("O", "Focus the selected card: large, with its thoughts and references"),
+        ("Affordance dot", "Connect that affordance → click a place"), ("F", "Focus the selected card: large, with its thoughts and references"),
+        ("In focus on a video", "Space play/pause · ← → 5 s · < > speed · T thought · Esc back"),
         ("T · ⇧T", "Thought about the selection · next thought after it (on a video: at the current time)"),
         ("A", "Line up the selected card's thoughts"),
         ("R", "Show every reference as a line"),
@@ -710,7 +722,8 @@ struct HelpOverlay: View {
         ("Space-drag", "Pan the board"), ("⌘A", "Select all"),
         ("← → ↑ ↓ · h l k j", "Move: follows from · its thoughts · previous / next in thread"),
         ("Delete", "Remove selection"), ("⌘Z · ⇧⌘Z", "Undo · redo"), ("⌘C · ⌘X · ⌘V · ⌘D", "Copy · cut · paste · duplicate cards"), ("Scroll · ⌘-scroll", "Pan · zoom"),
-        ("F · 0 · = · −", "Fit · 100% · zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),
+        ("⌘1 · ⌘2 · ⌘0", "Fit the board · fit the selection · 100% (on the selection)"),
+        ("⌘= · ⌘−", "Zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),
     ]
 
     var body: some View {

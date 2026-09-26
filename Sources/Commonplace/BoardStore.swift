@@ -139,11 +139,21 @@ final class BoardStore {
         scheduleSave()
     }
 
-    func resetZoom() { zoom(by: 1 / scale) }
+    /// ⌘0: 100%, centred on the selection if there is one.
+    func resetZoom() {
+        let selected = board.cards.filter { selection.contains($0.id) }
+        guard let first = selected.first, viewSize.width > 0 else { return zoom(by: 1 / scale) }
+        let box = selected.reduce(first.frame) { $0.union($1.frame) }
+        scale = 1
+        offset = CGPoint(x: viewSize.width / 2 - box.midX, y: viewSize.height / 2 - box.midY)
+        scheduleSave()
+    }
 
-    func zoomToFit() {
-        guard let first = board.cards.first, viewSize.width > 0 else { return }
-        let r = board.cards.reduce(first.frame) { $0.union($1.frame) }.insetBy(dx: -60, dy: -60)
+    /// ⌘1: fit the whole board. ⌘2 (`selectionOnly`): fit the selection.
+    func zoomToFit(selectionOnly: Bool = false) {
+        let cards = selectionOnly ? board.cards.filter { selection.contains($0.id) } : board.cards
+        guard let first = cards.first, viewSize.width > 0 else { return NSSound.beep() }
+        let r = cards.reduce(first.frame) { $0.union($1.frame) }.insetBy(dx: -60, dy: -60)
         scale = min(1.5, max(0.1, min(viewSize.width / r.width, viewSize.height / r.height)))
         offset = CGPoint(x: (viewSize.width - r.width * scale) / 2 - r.minX * scale,
                          y: (viewSize.height - r.height * scale) / 2 - r.minY * scale)

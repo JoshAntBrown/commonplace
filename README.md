@@ -48,15 +48,16 @@ Markdown files dropped into `cards/` by hand appear on the board on next open.
 
 Arrows (or **h j k l**) follow threads first: **←** to what the card follows from, **→** to its first
 thought, **↑ ↓** through the thread; where a thread ends they move to the nearest card that way.
-**U** adds a link or video by URL.
+**U** adds a link or video by URL. **⌘1** fits the board, **⌘2** the selection, **⌘0** is 100% (on
+the selection); **⌘=** / **⌘−** zoom.
 
 ## Focus
 
-Press **O** (or right-click → Focus) to open one card up close: a video plays large, a note or
+Press **F** (or right-click → Focus) to open one card up close: a video plays large, a note or
 image fills the space. Beside it: what it follows from, its thoughts (a video's in time order, with
 clickable timestamps), its references, and an "Add a thought" box (**T** to jump there; Return adds,
 on a video at the current time). Choosing any card in the panel focuses it instead. **Esc** goes
-back to the board.
+back to the board. With a video in focus: **Space** plays/pauses, **← →** skip 5 s, **< >** change speed.
 
 ## Copy and paste
 
