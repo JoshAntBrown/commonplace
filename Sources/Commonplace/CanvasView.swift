@@ -154,6 +154,7 @@ struct CanvasView: View {
                     NSApp.keyWindow?.makeFirstResponder(nil)
                 }
                 if dragPans {
+                    store.spacePanned = true
                     guard let origin = panOrigin?.offset else { return }
                     store.offset = CGPoint(x: origin.x + value.translation.width, y: origin.y + value.translation.height)
                     return
@@ -242,22 +243,49 @@ struct CanvasView: View {
         let scroll = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) { event in
             Self.handleScroll(event, store: store) ? nil : event
         }
+        // Clicking a card's video works the player and also selects the card.
+        let clicks = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            Self.selectCardUnderVideoClick(event, store: store)
+            return event
+        }
         let spaceUp = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { event in
             if event.keyCode == 49, store.spaceHeld {
                 store.spaceHeld = false
                 NSCursor.arrow.set()
+                if !store.spacePanned, let down = store.spaceDownAt, Date().timeIntervalSince(down) < 0.4 {
+                    store.spaceTapped()
+                }
             }
             return event
         }
         let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             Self.handleKey(event, store: store) ? nil : event
         }
-        monitors = [scroll, keys, spaceUp].compactMap { $0 }
+        monitors = [scroll, keys, spaceUp, clicks].compactMap { $0 }
     }
 
     private func removeMonitors() {
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
+    }
+
+    private static func selectCardUnderVideoClick(_ event: NSEvent, store: BoardStore) {
+        guard store.focusID == nil, let window = event.window,
+              let anchor = store.anchorView, anchor.window === window else { return }
+        var view = window.contentView?.superview?.hitTest(event.locationInWindow)
+        while let v = view {
+            if v is ClipWebView || v is TerminalView { return }
+            if v is WKWebView || v is AVPlayerView {
+                let world = store.toWorld(anchor.convert(event.locationInWindow, from: nil))
+                if let card = store.board.cards.last(where: { $0.frame.contains(world) }) {
+                    store.selection = [card.id]
+                    store.selectedConnection = nil
+                    store.editing = nil
+                }
+                return
+            }
+            view = v.superview
+        }
     }
 
     /// Scroll pans, ⌘/⌥-scroll and pinch zoom. Events over web views, text
@@ -275,10 +303,11 @@ struct CanvasView: View {
             store.zoom(by: 1 + event.magnification, around: p)
             return true
         }
-        // Scrolling over a web page or a text editor scrolls that instead.
+        // Scrolling over a text editor scrolls that instead. Over a card's video it
+        // moves the board: the video pages have nothing to scroll.
         var view = window.contentView?.superview?.hitTest(event.locationInWindow)
         while let v = view {
-            if v is WKWebView { return false }
+            if v is WKWebView || v is AVPlayerView { break }
             if let scroll = v as? NSScrollView, scroll.documentView is NSTextView { return false }
             view = v.superview
         }
@@ -307,10 +336,20 @@ struct CanvasView: View {
                 window.makeFirstResponder(nil)
                 break
             }
+            // A card's player that's been clicked into gets its own keys (Space,
+            // arrows, J/K/L, F, M…). Two stay with the board: T adds a thought at
+            // the current time, and Esc hands the keyboard back.
             if v is WKWebView || v is AVPlayerView {
-                guard event.keyCode == 53 else { return false }
-                window.makeFirstResponder(nil)
-                return true
+                if event.keyCode == 53 {
+                    window.makeFirstResponder(nil)
+                    return true
+                }
+                let plain = event.modifierFlags.intersection([.command, .control, .option]).isEmpty
+                if plain, event.charactersIgnoringModifiers?.lowercased() == "t" {
+                    if event.modifierFlags.contains(.shift) { store.continueThread() } else { store.addThought() }
+                    return true
+                }
+                return false
             }
             responder = v.superview
         }
@@ -432,9 +471,11 @@ struct CanvasView: View {
         if flags.contains(.control) { return false }
 
         switch event.keyCode {
-        case 49: // Space: hold and drag to pan
+        case 49: // Space: hold and drag to pan; tap to play/pause the selected video
             if !event.isARepeat, !store.spaceHeld {
                 store.spaceHeld = true
+                store.spaceDownAt = Date()
+                store.spacePanned = false
                 NSCursor.openHand.set()
             }
             return true
@@ -442,8 +483,13 @@ struct CanvasView: View {
         case 36, 76:
             if let id = store.selection.first { store.beginEditing(id) }
             return true
-        case 123: store.navigate(.left); return true
-        case 124: store.navigate(.right); return true
+        // With a video selected, ← → (and h l) skip it like any player.
+        case 123:
+            if let video = store.selectedVideo { store.video(video).skip(by: -5) } else { store.navigate(.left) }
+            return true
+        case 124:
+            if let video = store.selectedVideo { store.video(video).skip(by: 5) } else { store.navigate(.right) }
+            return true
         case 125: store.navigate(.down); return true
         case 126: store.navigate(.up); return true
         default: break
@@ -458,10 +504,12 @@ struct CanvasView: View {
         case "f":
             guard let id = store.selection.first else { return false }
             withAnimation(.easeOut(duration: 0.15)) { store.focus(id) }
-        case "h": store.navigate(.left)
+        case "h":
+            if let video = store.selectedVideo { store.video(video).skip(by: -5) } else { store.navigate(.left) }
         case "j": store.navigate(.down)
         case "k": store.navigate(.up)
-        case "l": store.navigate(.right)
+        case "l":
+            if let video = store.selectedVideo { store.video(video).skip(by: 5) } else { store.navigate(.right) }
         case "i": store.pickImages()
         case "c":
             if flags.contains(.shift) { store.startThreadLink() } else { store.startConnecting() }
@@ -470,9 +518,9 @@ struct CanvasView: View {
         case "p": store.add(.place, at: p, edit: true)
         case "t":
             if flags.contains(.shift) { store.continueThread() } else { store.addThought() }
-        case "[", "]":
+        case "[", "]", "<", ">", ",", ".":
             guard let id = store.selection.first, store.videoID(for: id) != nil else { return false }
-            store.stepSpeed(id, up: key == "]")
+            store.stepSpeed(id, up: ["]", ">", "."].contains(key))
         case "b":
             let defaults = UserDefaults.standard
             defaults.set(!defaults.bool(forKey: "showBrowser"), forKey: "showBrowser")
@@ -755,8 +803,9 @@ struct HelpOverlay: View {
         ("[ · ]", "Video slower · faster"),
         ("1–6 · 7", "Colour · clear colour"), ("Return · ⇧Return", "Edit or finish · new line"), ("Esc", "Finish editing"),
         ("Drag · ⇧-drag", "Select a box of cards · add to selection"),
-        ("Space-drag", "Pan the board"), ("⌘A", "Select all"),
+        ("Space-drag · Space", "Pan the board · play/pause the selected video"), ("⌘A", "Select all"),
         ("← → ↑ ↓ · h l k j", "Move: follows from · its thoughts · previous / next in thread"),
+        ("With a video selected", "Space play/pause · ← → / h l skip 5 s · < > speed · Esc to move away"),
         ("Delete", "Remove selection"), ("⌘Z · ⇧⌘Z", "Undo · redo"), ("⌘C · ⌘X · ⌘V · ⌘D", "Copy · cut · paste · duplicate cards"), ("Scroll · ⌘-scroll", "Pan · zoom"),
         ("⌘1 · ⌘2 · ⌘0", "Fit the board · fit the selection · 100% (on the selection)"),
         ("⌘= · ⌘−", "Zoom in · out"), ("⌃⇧⌘Space", "Next theme"), ("?", "Toggle this"),

@@ -525,6 +525,21 @@ final class BoardStore {
 
     /// Space is held: dragging the canvas pans rather than selects.
     @ObservationIgnored var spaceHeld = false
+    /// When Space went down, and whether the board was panned while it was
+    /// held: a quick tap without panning plays/pauses the selected video.
+    @ObservationIgnored var spaceDownAt: Date?
+    @ObservationIgnored var spacePanned = false
+
+    /// The one selected card, if it's a video.
+    var selectedVideo: UUID? {
+        guard selection.count == 1, let id = selection.first, card(id)?.kind == .video else { return nil }
+        return id
+    }
+
+    func spaceTapped() {
+        guard selection.count == 1, let id = selection.first, card(id)?.kind == .video else { return }
+        video(id).togglePlay()
+    }
 
     /// Selects every card touching a box drawn in canvas coordinates.
     func select(in screenRect: CGRect, adding base: Set<UUID>) {
