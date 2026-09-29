@@ -18,6 +18,15 @@ enum OfflineVideo {
     }
 
     static let ytDlp = tool("yt-dlp")
+
+    /// Browsers yt-dlp can borrow a sign-in from, when a site (YouTube) refuses
+    /// anonymous downloads. Off unless chosen in Settings.
+    static let browsers = ["brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi"]
+    static let browserKey = "offlineSignInBrowser"
+    static var signInBrowser: String? {
+        let value = UserDefaults.standard.string(forKey: browserKey) ?? ""
+        return browsers.contains(value) ? value : nil
+    }
     /// Lets yt-dlp join separate video and audio streams (needed above ~360p).
     static let ffmpeg = tool("ffmpeg")
 
@@ -89,6 +98,7 @@ enum OfflineVideo {
             "--progress-template", "download:%(progress._percent_str)s",
             "--print", "after_move:filepath",
         ]
+        if let browser = signInBrowser { args += ["--cookies-from-browser", browser] }
         if let ffmpeg {
             // Up to 1080p, in codecs the macOS player plays, joined into one MP4.
             args += ["-S", "res:1080,vcodec:h264,acodec:m4a", "--merge-output-format", "mp4",
@@ -135,8 +145,14 @@ enum OfflineVideo {
                 } else if cancelled {
                     done(.failure(Failure("Cancelled.")))
                 } else {
-                    let reason = errorText.split(separator: "\n").last { $0.contains("ERROR") }.map(String.init)
-                    done(.failure(Failure(reason ?? "yt-dlp couldn't save this video.")))
+                    var reason = errorText.split(separator: "\n").last { $0.contains("ERROR") }.map(String.init)
+                        ?? "yt-dlp couldn't save this video."
+                    // Refused downloads are usually fixed by a sign-in.
+                    if signInBrowser == nil, reason.contains("403") || reason.lowercased().contains("sign in") {
+                        reason += "\n\nThe site refused an anonymous download. In Settings (⌘,) → Offline videos, "
+                            + "choose a browser you're signed in with to let yt-dlp use that sign-in."
+                    }
+                    done(.failure(Failure(reason)))
                 }
             }
         }

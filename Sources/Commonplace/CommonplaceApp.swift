@@ -35,6 +35,11 @@ struct CommonplaceApp: App {
                 .preferredColorScheme(theme.isDark ? .dark : .light)
                 .frame(minWidth: 800, minHeight: 500)
         }
+        Settings {
+            SettingsView()
+                .environment(\.theme, theme)
+                .preferredColorScheme(theme.isDark ? .dark : .light)
+        }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Board") { boardName = library.createBoard() }
@@ -200,5 +205,38 @@ private struct WindowTheme: NSViewRepresentable {
             window.backgroundColor = color
             window.titlebarAppearsTransparent = true
         }
+    }
+}
+
+/// ⌘, — app settings.
+struct SettingsView: View {
+    @AppStorage(OfflineVideo.browserKey) private var browser = ""
+
+    var body: some View {
+        Form {
+            Section("Offline videos") {
+                LabeledContent("yt-dlp") {
+                    Text(OfflineVideo.ytDlp?.path ?? "Not installed: only X videos can be saved")
+                        .foregroundStyle(OfflineVideo.ytDlp == nil ? .secondary : .primary)
+                }
+                LabeledContent("ffmpeg") {
+                    Text(OfflineVideo.ffmpeg?.path ?? "Not installed: videos save at up to 360p")
+                        .foregroundStyle(OfflineVideo.ffmpeg == nil ? .secondary : .primary)
+                }
+                Picker("Use sign-in from", selection: $browser) {
+                    Text("None").tag("")
+                    ForEach(OfflineVideo.browsers, id: \.self) { Text($0.capitalized).tag($0) }
+                }
+                .disabled(OfflineVideo.ytDlp == nil)
+                Text("Some sites, YouTube especially, refuse anonymous downloads. Choosing a browser you're "
+                     + "signed in with lets yt-dlp use that sign-in when saving. macOS may ask once for access "
+                     + "to the browser's saved data.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 480)
+        .padding(.vertical, 8)
     }
 }

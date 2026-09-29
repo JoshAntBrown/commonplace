@@ -105,7 +105,9 @@ affordance. Connections remember which affordance they start from (`fromItem` in
 Right-click a video → **Save for Offline** (or the download button in its title bar) keeps a copy in the
 board's `assets/videos/`, which then plays in the standard player, offline. X videos download
 directly; YouTube, Vimeo and others need [yt-dlp](https://github.com/yt-dlp/yt-dlp) (and ffmpeg for
-above 360p) installed, and the option only appears when it is.
+above 360p) installed, and the option only appears when it is. If a site refuses anonymous
+downloads (YouTube often does), **Settings (⌘,) → Offline videos → Use sign-in from** lets yt-dlp use
+your browser's sign-in; it's off by default.
 
 - YouTube: embedded via the IFrame API.
 - X posts: the MP4 behind the post is resolved and played natively (AVKit).
