@@ -107,6 +107,12 @@ struct CanvasView: View {
             .onDisappear(perform: removeMonitors)
         }
         .navigationTitle(store.board.name)
+        .alert("Couldn't save the video", isPresented: Binding(get: { store.offlineError != nil },
+                                                             set: { if !$0 { store.offlineError = nil } })) {
+            Button("OK") { store.offlineError = nil }
+        } message: {
+            Text(store.offlineError ?? "")
+        }
         .sheet(isPresented: $store.showLinkPrompt) {
             LinkPrompt(text: $linkText) {
                 store.addURL(linkText, at: store.insertionPoint)

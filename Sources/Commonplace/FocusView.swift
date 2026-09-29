@@ -80,9 +80,9 @@ struct FocusView: View {
     private var video: some View {
         VStack(alignment: .leading, spacing: 14) {
             Group {
-                if case .file(let url) = VideoSource.of(card) {
+                if case .file(let url) = VideoSource.of(card, in: store.board.folder) {
                     NativeVideoView(url: url, controller: store.video(card.id))
-                } else if let source = VideoSource.of(card) {
+                } else if let source = VideoSource.of(card, in: store.board.folder) {
                     WebVideoView(source: source, controller: store.video(card.id))
                 }
             }

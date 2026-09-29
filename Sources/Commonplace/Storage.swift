@@ -157,6 +157,7 @@ enum CardFile {
         if let image = card.image { lines.append("image: \(quote(image))") }
         if let summary = card.summary, !summary.isEmpty { lines.append("summary: \(quote(summary))") }
         if let media = card.media { lines.append("media: \(quote(media))") }
+        if let offline = card.offline { lines.append("offline: \(quote(offline))") }
         if let source = card.source { lines.append("source: \(quote(source))") }
         if card.speed != 1 { lines.append("speed: \(card.speed)") }
         if card.position > 0 { lines.append("position: \(Int(card.position))") }
@@ -195,6 +196,7 @@ enum CardFile {
         card.image = fields["image"]
         card.summary = fields["summary"]
         card.media = fields["media"]
+        card.offline = fields["offline"]
         card.source = fields["source"]
         card.parent = (fields["parent"] ?? fields["thought-of"] ?? fields["moment-of"]).flatMap(UUID.init(uuidString:))
         card.speed = fields["speed"].flatMap(Double.init) ?? 1

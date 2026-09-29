@@ -61,6 +61,15 @@ struct CardView: View {
             .onChange(of: isEditing) { _, _ in if card.kind == .place { store.fitPlace(card.id) } }
             .contextMenu {
                 Button("Focus") { store.focus(card.id) }
+                if card.kind == .video {
+                    if store.saving[card.id] != nil {
+                        Button("Cancel Saving") { store.cancelSaving(card.id) }
+                    } else if card.offline != nil {
+                        Button("Remove Offline Copy") { store.removeOffline(card.id) }
+                    } else if OfflineVideo.canSave(card) {
+                        Button("Save for Offline") { store.saveOffline(card.id) }
+                    }
+                }
                 Button("Add Thought") { store.selection = [card.id]; store.addThought() }
                 Button("Choose What Follows This…") { store.selection = [card.id]; store.startThreadLink() }
                 Button("Tidy Thread") { store.tidy([card.id]) }
@@ -171,6 +180,25 @@ struct CardView: View {
     /// Right-clicking a card outside the selection acts on that card alone.
     private func selectForMenu() {
         if !store.selection.contains(card.id) { store.selection = [card.id] }
+    }
+
+    /// Saved for offline, saving (click to cancel), or a button to save.
+    @ViewBuilder private var offlineControl: some View {
+        if let progress = store.saving[card.id] {
+            Button { store.cancelSaving(card.id) } label: {
+                Text("Saving \(Int(progress * 100))%").monospacedDigit()
+            }
+            .buttonStyle(.plain)
+            .help("Saving for offline — click to cancel")
+        } else if card.offline != nil {
+            Image(systemName: "arrow.down.circle.fill")
+                .foregroundStyle(theme.accent)
+                .help("Saved for offline (right-click to remove the copy)")
+        } else if OfflineVideo.canSave(card) {
+            Button { store.saveOffline(card.id) } label: { Image(systemName: "arrow.down.circle") }
+                .buttonStyle(.plain)
+                .help("Save for offline")
+        }
     }
 
     private var openButton: some View {
@@ -363,6 +391,7 @@ struct CardView: View {
                     }
                 }
                 .help("Playback speed: click to speed up, right-click for all speeds ([ and ])")
+                offlineControl
                 Button { store.addThoughtAtCurrentTime(card.id) } label: {
                     HStack(spacing: 3 * c) {
                         Image(systemName: "plus")
@@ -388,9 +417,9 @@ struct CardView: View {
                     }
                     .overlay { Label("In focus", systemImage: "scope").font(.system(size: 12 * c)).foregroundStyle(.white) }
                     .clipped()
-                } else if case .file(let url) = VideoSource.of(card) {
+                } else if case .file(let url) = VideoSource.of(card, in: store.board.folder) {
                     NativeVideoView(url: url, controller: store.video(card.id))
-                } else if let source = VideoSource.of(card) {
+                } else if let source = VideoSource.of(card, in: store.board.folder) {
                     WebVideoView(source: source, controller: store.video(card.id))
                 }
             }

@@ -56,6 +56,8 @@ struct Card: Identifiable, Equatable {
     var summary: String?
     /// Direct video file behind a post (e.g. the MP4 in an X post).
     var media: String?
+    /// A saved copy of the video in the board folder (`assets/videos/…`), for offline.
+    var offline: String?
     /// The page this card was clipped from.
     var source: String?
     /// The thread: the card this one follows from (Luhmann's

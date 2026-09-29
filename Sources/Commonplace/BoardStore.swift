@@ -573,6 +573,47 @@ final class BoardStore {
     }
     var stamp: Stamp?
 
+    // MARK: Offline videos
+
+    /// Saving progress per video card, 0…1.
+    var saving: [UUID: Double] = [:]
+    @ObservationIgnored private var saveJobs: [UUID: OfflineVideo.Job] = [:]
+
+    func saveOffline(_ id: UUID) {
+        guard let card = card(id), OfflineVideo.canSave(card), saving[id] == nil else { return }
+        saving[id] = 0
+        let folder = board.folder.appendingPathComponent("assets/videos", isDirectory: true)
+        saveJobs[id] = OfflineVideo.save(card, into: folder, progress: { [weak self] p in
+            if self?.saving[id] != nil { self?.saving[id] = p }
+        }, done: { [weak self] result in
+            guard let self else { return }
+            self.saving[id] = nil
+            self.saveJobs[id] = nil
+            switch result {
+            case .success(let file):
+                // The player switches to the saved file, picking up where it was.
+                if let position = self.card(id)?.position { self.video(id).resumeAt = position }
+                self.update(id) { $0.offline = "assets/videos/" + file.lastPathComponent }
+            case .failure(let error):
+                if (error as? OfflineVideo.Failure)?.message != "Cancelled." { self.offlineError = error.localizedDescription }
+            }
+        })
+    }
+
+    func cancelSaving(_ id: UUID) {
+        saveJobs[id]?.cancel()
+    }
+
+    func removeOffline(_ id: UUID) {
+        guard let file = card(id)?.offline else { return }
+        try? FileManager.default.trashItem(at: board.folder.appendingPathComponent(file), resultingItemURL: nil)
+        if let position = card(id)?.position { video(id).resumeAt = position }
+        update(id) { $0.offline = nil }
+    }
+
+    /// Shown once if a save fails.
+    var offlineError: String?
+
     /// The one selected card, if it's a video.
     var selectedVideo: UUID? {
         guard selection.count == 1, let id = selection.first, card(id)?.kind == .video else { return nil }

@@ -14,7 +14,13 @@ enum VideoSource: Equatable {
     case file(URL)
 
     /// Cards with a resolved media file play it natively; otherwise fall back to the page.
-    static func of(_ card: Card) -> VideoSource? {
+    /// A saved copy plays first (offline, in the standard player), then a
+    /// direct file, then the page's own player.
+    static func of(_ card: Card, in folder: URL? = nil) -> VideoSource? {
+        if let offline = card.offline, let folder {
+            let file = folder.appendingPathComponent(offline)
+            if FileManager.default.fileExists(atPath: file.path) { return .file(file) }
+        }
         if let media = card.media, let url = URL(string: media) { return .file(url) }
         return card.url.flatMap(URL.init(string:)).flatMap(detect)
     }
